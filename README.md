@@ -1,14 +1,10 @@
 # PyWallet
 
 Wallet crypto desktop (EVM) berbasis Python + PySide6. Non-custodial: kunci wallet dibuat dan disimpan
-terenkripsi di komputermu sendiri. Saat ini berjalan di jaringan **Sepolia (testnet)**.
-
-> **Status: tahap 1–2 (fondasi + CRUD wallet).** Saldo, harga, kirim, dan swap menyusul di tahap berikutnya.
+terenkripsi di komputermu sendiri. Bawaan: **Testnet (Sepolia)**; **Mainnet (Ethereum)** bisa dipilih dari
+chip di pojok kanan atas lobi.
 
 ## Menjalankan di Windows
-
-1. Pasang Python 3.10+ dari python.org (centang *Add Python to PATH*).
-2. Di folder proyek, buka Command Prompt / PowerShell:
 
 ```bat
 python -m venv .venv
@@ -17,67 +13,65 @@ pip install -r requirements.txt
 python main.py
 ```
 
-Menjalankan tes:
+Tes: `python -m pytest -q`. Data aplikasi: `%APPDATA%\PyWallet\` (database `pywallet.db` + folder `avatars`).
 
-```bat
-python -m pytest -q
-```
-
-Data aplikasi tersimpan di `%APPDATA%\PyWallet\pywallet.db`.
-
-## Fitur saat ini
+## Fitur saat ini (v0.2.0)
 
 | Fitur | Keterangan |
 |---|---|
-| Master password | Dibuat saat pertama kali membuka aplikasi |
-| Jeda 5 menit | Jika aplikasi terakhir aktif < 5 menit lalu, lobi terbuka tanpa password |
-| Buat wallet | Seed phrase 12 kata (BIP39), wajib verifikasi 3 kata sebelum disimpan |
-| Impor wallet | Lewat seed phrase (12/24 kata) atau private key |
-| Ganti nama | Dari tab Profil |
-| Lihat seed phrase / private key | Dari tab Profil, wajib master password, tertutup otomatis 30 detik |
-| Hapus wallet | Wajib centang backup, ketik nama wallet, dan master password |
+| Master password + jeda 5 menit | Lobi terbuka tanpa password jika terakhir aktif < 5 menit lalu; aksi sensitif tetap minta password |
+| Buat / impor wallet | Seed 12 kata (wajib verifikasi 3 kata) atau impor seed/private key |
+| Ganti nama, hapus, lihat seed/private key | Dari tab Profil (hapus & lihat rahasia wajib master password) |
+| **Foto profil kustom** | Pilih gambar dari komputer (PNG/JPG/WebP/BMP/GIF); di-crop persegi dari tengah dan disimpan sebagai salinan 256×256 di folder `avatars` |
+| **Total aset USD / IDR / ETH** | Tombol pil di kartu saldo; pilihan diingat. Testnet = ETH Sepolia, aset testnet tidak bernilai uang (USD/IDR = 0) |
+| **Mainnet / Testnet** | Chip di header lobi; pilihan diingat |
+| **Logo Ethereum** | Ikon token ETH memakai logo Ethereum |
+| Harga pasar | Binance (publik, tanpa API key) + kurs USD→IDR; grafik mini ETH 24 jam |
+| Saldo on-chain | RPC publik (failover antar-endpoint) |
 | Terima | Alamat + QR code |
-| Kunci aplikasi | Menghapus jeda 5 menit; pembukaan berikutnya wajib password |
+| Halaman login | Font Poppins (SIL OFL 1.1, lihat `pywallet/assets/fonts/OFL.txt`), latar bercahaya, logo |
 
-Tombol **Kirim** dan **Trade** sudah ada di lobi, tetapi masih menampilkan pesan "akan hadir".
+Belum ada: Kirim dan Trade (menampilkan pesan "akan hadir"), serta daftar token mainnet yang diperluas.
+
+### Daftar token mainnet yang diperluas (sengaja dimatikan)
+
+Kode untuk menampilkan ETH di Base, USDT/USDC di Ethereum, dan koin populer lain (diurutkan dari aset terbesar,
+saldo 0 menyusul berurutan abjad) sudah ada di `pywallet/tokens.py` dan `pywallet/portfolio.py`, tetapi dimatikan
+lewat `EXTENDED_TOKEN_LIST = False` di `pywallet/config.py` sampai sesi khususnya. Selama False, lobi hanya
+menampilkan ETH native. Tes jalur yang diperluas tetap dijalankan.
 
 ## Keamanan
 
-- Seed phrase / private key dienkripsi dengan **AES-256-GCM**; kuncinya diturunkan dari master password
-  memakai **scrypt** (N=2^15, r=8, p=1) dan **tidak pernah disimpan**.
-- Ciphertext terikat ke alamat wallet-nya (AAD), sehingga tidak bisa ditukar antar-wallet.
-- Dua tingkat akses: data publik (nama, alamat) tidak terenkripsi agar lobi bisa dibuka dalam jeda 5 menit.
-  Membuat, mengimpor, melihat rahasia, dan menghapus wallet **selalu** meminta master password
-  (ditegakkan di `vault.py`, bukan hanya di UI).
-- Clipboard dibersihkan otomatis 30 detik setelah menyalin seed phrase / private key.
-- Database memakai `secure_delete`, dan di Linux/macOS izin file diatur 0600.
-- **Batasan:** kode ini belum diaudit. Pakai di testnet dulu. Python tidak bisa menghapus string rahasia dari
-  memori secara andal.
-- **Lupa master password** tidak bisa dipulihkan. Jalan keluarnya: hapus `pywallet.db`, lalu impor ulang
-  wallet dengan seed phrase / private key.
+- Seed phrase / private key dienkripsi **AES-256-GCM**; kunci diturunkan dari master password dengan **scrypt**
+  dan tidak pernah disimpan. Ciphertext terikat ke alamat wallet (AAD).
+- Membuat, mengimpor, melihat rahasia, dan menghapus wallet selalu meminta master password (ditegakkan di `vault.py`).
+- Foto profil dan preferensi tampilan bukan data sensitif dan tidak dienkripsi. Nama file foto divalidasi agar
+  database yang dimodifikasi tidak bisa menunjuk ke file di luar folder `avatars`.
+- Aplikasi hanya **membaca** data jaringan (saldo, harga) lewat alamat publik; kunci tidak pernah dikirim keluar.
+- **Batasan:** kode belum diaudit; pakai di testnet dulu. Data jaringan memakai endpoint publik gratis yang bisa
+  dibatasi lajunya atau berubah. Lupa master password tidak bisa dipulihkan (hapus `pywallet.db`, impor ulang wallet).
 
 ## Struktur
 
 ```
-main.py                  titik masuk
+main.py                    titik masuk
 pywallet/
-  config.py              konstanta & lokasi data
-  crypto.py              scrypt + AES-GCM
-  db.py                  SQLite (skema & migrasi)
-  wallet_core.py         seed/private key -> akun EVM (eth-account)
-  vault.py               logika inti: master password, CRUD wallet, jeda 5 menit
-  ui/
-    theme.py             palette & stylesheet
-    icons.py, widgets.py komponen visual
-    pages.py             setup, unlock, lobi, swap, profil
-    dialogs.py           buat, impor, rename, hapus, lihat rahasia, terima
-    main_window.py       alur aplikasi
-tests/                   37 tes core + 10 tes UI
+  config.py                konstanta, lokasi data, saklar EXTENDED_TOKEN_LIST
+  crypto.py, db.py         enkripsi, SQLite (skema v2: kolom avatar)
+  wallet_core.py, vault.py akun EVM, master password, CRUD wallet, preferensi
+  avatars.py               impor foto profil
+  networks.py, tokens.py   jaringan & token
+  httpclient.py, rpc.py    HTTP/JSON-RPC
+  prices.py, portfolio.py  harga Binance, kurs, total aset & pengurutan
+  formatting.py            USD, Rupiah, ETH, persen
+  assets/                  logo ETH, font Poppins
+  ui/                      tema, ikon, widget, halaman, dialog, jendela utama
+tests/                     core, UI (offscreen), lapisan data (jaringan palsu), foto profil
 ```
 
-## Rencana tahap berikutnya
+## Rencana
 
-3. Saldo on-chain (RPC) dan harga dari API bursa; manajemen token via contract address
+3. Manajemen token via contract address; daftar token mainnet yang diperluas
 4. Kirim ETH/token (uji di Sepolia)
 5. Swap lewat kontrak PancakeSwap
 6. Packaging `.exe` dengan PyInstaller
