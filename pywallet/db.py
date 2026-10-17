@@ -10,7 +10,7 @@ import sqlite3
 import sys
 from pathlib import Path
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 class Database:
@@ -46,7 +46,12 @@ class Database:
                 );
                 """
             )
-            self.conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
+            self.conn.execute("PRAGMA user_version = 1")
+            self.conn.commit()
+        if version < 2:
+            # v2: foto profil kustom (nama file di folder avatars, bukan path penuh)
+            self.conn.execute("ALTER TABLE wallets ADD COLUMN avatar TEXT")
+            self.conn.execute("PRAGMA user_version = 2")
             self.conn.commit()
 
     # --- pengaturan -------------------------------------------------------

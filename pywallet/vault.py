@@ -57,6 +57,7 @@ class WalletRecord:
     secret_type: str
     derivation_path: str | None
     created_at: str
+    avatar: str | None = None   # nama file foto profil kustom (None = avatar bawaan)
 
     @property
     def short_address(self) -> str:
@@ -162,20 +163,18 @@ class Vault:
             secret_type=row["secret_type"],
             derivation_path=row["derivation_path"],
             created_at=row["created_at"],
+            avatar=row["avatar"],
         )
 
+    _COLUMNS = "id, name, address, secret_type, derivation_path, created_at, avatar"
+
     def list_wallets(self) -> list[WalletRecord]:
-        rows = self.db.conn.execute(
-            "SELECT id, name, address, secret_type, derivation_path, created_at "
-            "FROM wallets ORDER BY id"
-        ).fetchall()
+        rows = self.db.conn.execute(f"SELECT {self._COLUMNS} FROM wallets ORDER BY id").fetchall()
         return [self._record(r) for r in rows]
 
     def get_wallet(self, wallet_id: int) -> WalletRecord:
         row = self.db.conn.execute(
-            "SELECT id, name, address, secret_type, derivation_path, created_at "
-            "FROM wallets WHERE id = ?",
-            (wallet_id,),
+            f"SELECT {self._COLUMNS} FROM wallets WHERE id = ?", (wallet_id,)
         ).fetchone()
         if row is None:
             raise WalletNotFound("Wallet tidak ditemukan.")
@@ -284,6 +283,22 @@ class Vault:
         with self.db.conn:
             self.db.conn.execute("UPDATE wallets SET name = ? WHERE id = ?", (new_name, wallet_id))
         return self.get_wallet(wallet_id)
+
+    def set_avatar(self, wallet_id: int, filename: str | None) -> WalletRecord:
+        """Simpan nama file foto profil (None = kembali ke avatar bawaan)."""
+        self.get_wallet(wallet_id)
+        with self.db.conn:
+            self.db.conn.execute("UPDATE wallets SET avatar = ? WHERE id = ?", (filename, wallet_id))
+        return self.get_wallet(wallet_id)
+
+    # ------------------------------------------------------------------
+    # Preferensi tampilan (bukan data sensitif)
+    # ------------------------------------------------------------------
+    def get_pref(self, key: str, default: str | None = None) -> str | None:
+        return self.db.get_setting(f"pref:{key}", default)
+
+    def set_pref(self, key: str, value: str) -> None:
+        self.db.set_setting(f"pref:{key}", value)
 
     # ------------------------------------------------------------------
     # Sensitif: lihat rahasia & hapus (selalu butuh password)

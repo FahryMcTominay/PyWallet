@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 
 APP_NAME = "PyWallet"
-APP_VERSION = "0.1.0"
+APP_VERSION = "0.2.0"
 
 # Jeda tanpa master password: jika aplikasi terakhir aktif < 5 menit lalu,
 # lobi bisa dibuka tanpa password. Aksi sensitif tetap meminta password.
@@ -21,8 +21,10 @@ HEARTBEAT_MS = 30_000           # catat "terakhir aktif" tiap 30 detik saat apli
 
 DEFAULT_DERIVATION_PATH = "m/44'/60'/0'/0/0"
 
-NETWORK_NAME = "Sepolia"
-NETWORK_IS_TESTNET = True
+# Daftar token mainnet yang diperluas (ETH di Base, USDT/USDC, dan koin populer lainnya) sengaja
+# DIMATIKAN dulu: fitur ini diminta dikerjakan di sesi tersendiri. Kodenya sudah ada di tokens.py;
+# mengubah nilai ini menjadi True akan mengaktifkannya (tes untuk jalur itu tetap dijalankan).
+EXTENDED_TOKEN_LIST = False
 
 
 def data_dir() -> Path:
@@ -40,3 +42,15 @@ def data_dir() -> Path:
 
 def db_path() -> Path:
     return data_dir() / "pywallet.db"
+
+
+def avatars_dir() -> Path:
+    return data_dir() / "avatars"
+
+
+def assets_dir() -> Path:
+    """Folder aset bawaan (logo, font). Mendukung aplikasi yang dibungkus PyInstaller."""
+    base = getattr(sys, "_MEIPASS", None)
+    if base:
+        return Path(base) / "pywallet" / "assets"
+    return Path(__file__).parent / "assets"
