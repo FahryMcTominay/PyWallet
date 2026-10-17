@@ -1,9 +1,19 @@
-"""Widget kecil yang dipakai ulang di banyak layar."""
+"""Widget yang dipakai ulang di banyak layar."""
 from __future__ import annotations
 
 import qrcode
-from PySide6.QtCore import QRectF, QSize, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QFont, QGuiApplication, QPainter
+from PySide6.QtCore import QPointF, QRectF, QSize, Qt, QTimer, Signal
+from PySide6.QtGui import (
+    QColor,
+    QFont,
+    QGuiApplication,
+    QLinearGradient,
+    QPainter,
+    QPainterPath,
+    QPen,
+    QPixmap,
+    QRadialGradient,
+)
 from PySide6.QtWidgets import (
     QAbstractButton,
     QFrame,
@@ -17,7 +27,11 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ..config import CLIPBOARD_CLEAR_SECONDS
+from ..avatars import AvatarStore
+from ..config import CLIPBOARD_CLEAR_SECONDS, assets_dir
+from ..networks import NETWORKS
+from ..tokens import Token
+from ..vault import WalletRecord
 from . import icons, theme
 
 
@@ -31,6 +45,11 @@ def label(text: str = "", name: str | None = None, wrap: bool = False, selectabl
     lb.setWordWrap(wrap)
     if selectable:
         lb.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+    return lb
+
+
+def styled(lb: QLabel, color: str, size: int = 14, weight: int = 400) -> QLabel:
+    lb.setStyleSheet(f"color: {color}; font-size: {size}px; font-weight: {weight}; background: transparent;")
     return lb
 
 
@@ -53,6 +72,78 @@ def copy_to_clipboard(text: str, sensitive: bool = False, anchor: QWidget | None
     if anchor is not None:
         msg = "Tersalin" + (f" (dihapus otomatis dalam {CLIPBOARD_CLEAR_SECONDS} dtk)" if sensitive else "")
         QToolTip.showText(anchor.mapToGlobal(anchor.rect().bottomLeft()), msg, anchor, anchor.rect(), 1800)
+
+
+_eth_pixmap: QPixmap | None = None
+
+
+def eth_logo() -> QPixmap:
+    """Logo Ethereum (PNG transparan di assets/eth.png)."""
+    global _eth_pixmap
+    if _eth_pixmap is None:
+        _eth_pixmap = QPixmap(str(assets_dir() / "eth.png"))
+    return _eth_pixmap
+
+
+def _draw_pixmap_smooth(p: QPainter, pm: QPixmap, target: QRectF) -> None:
+    p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+    p.drawPixmap(target, pm, QRectF(pm.rect()))
+
+
+# --------------------------------------------------------------------------
+# Latar halaman dengan cahaya lembut (dipakai halaman login/onboarding)
+# --------------------------------------------------------------------------
+class GlowPage(QWidget):
+    def paintEvent(self, _event) -> None:
+        p = QPainter(self)
+        p.fillRect(self.rect(), QColor(theme.BG))
+        w, h = self.width(), self.height()
+        g1 = QRadialGradient(QPointF(w * 0.12, h * 0.08), max(w, h) * 0.75)
+        c1 = QColor(theme.ACCENT)
+        c1.setAlpha(130)
+        g1.setColorAt(0.0, c1)
+        g1.setColorAt(1.0, QColor(0, 0, 0, 0))
+        p.fillRect(self.rect(), g1)
+        g2 = QRadialGradient(QPointF(w * 0.95, h * 0.98), max(w, h) * 0.8)
+        c2 = QColor(theme.SURFACE)
+        c2.setAlpha(210)
+        g2.setColorAt(0.0, c2)
+        g2.setColorAt(1.0, QColor(0, 0, 0, 0))
+        p.fillRect(self.rect(), g2)
+
+
+# --------------------------------------------------------------------------
+# Kartu bergradasi (kartu saldo, kartu profil)
+# --------------------------------------------------------------------------
+class GradientCard(QFrame):
+    def __init__(self, parent: QWidget | None = None, radius: int = 22):
+        super().__init__(parent)
+        self._radius = radius
+
+    def paintEvent(self, _event) -> None:
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        rect = QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5)
+        path = QPainterPath()
+        path.addRoundedRect(rect, self._radius, self._radius)
+        grad = QLinearGradient(rect.topLeft(), rect.bottomRight())
+        grad.setColorAt(0.0, QColor(theme.ACCENT))
+        grad.setColorAt(1.0, QColor(theme.SURFACE))
+        p.fillPath(path, grad)
+        p.setClipPath(path)
+        glow = QColor(theme.TEXT)
+        glow.setAlpha(24)
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(glow)
+        p.drawEllipse(QPointF(rect.right() - 20, rect.top() + 10), rect.height() * 0.55, rect.height() * 0.55)
+        glow.setAlpha(14)
+        p.setBrush(glow)
+        p.drawEllipse(QPointF(rect.right() - rect.width() * 0.35, rect.bottom() + 20), rect.height() * 0.5, rect.height() * 0.5)
+        p.setClipping(False)
+        pen = QPen(QColor(210, 193, 182, 55), 1)
+        p.setPen(pen)
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        p.drawPath(path)
 
 
 # --------------------------------------------------------------------------
@@ -93,31 +184,200 @@ class PasswordField(QWidget):
 
 
 # --------------------------------------------------------------------------
-# Avatar bundar dengan huruf pertama nama wallet
+# Avatar wallet: foto kustom, atau gradien unik per alamat + huruf pertama nama
 # --------------------------------------------------------------------------
+_PRESETS = [
+    ("#456882", "#D2C1B6"),
+    ("#2E6F8E", "#9ED0D8"),
+    ("#5B7DB1", "#C9D6F0"),
+    ("#3E7C72", "#BFE3D0"),
+    ("#8A6F9E", "#E0CFEA"),
+    ("#B5835A", "#F0D9B5"),
+    ("#2B5D7A", "#D2C1B6"),
+    ("#C0766B", "#F1D1C6"),
+]
+
+
+def avatar_colors(address: str) -> tuple[str, str]:
+    try:
+        idx = int(address[2:10], 16)
+    except (ValueError, IndexError):
+        idx = 0
+    return _PRESETS[idx % len(_PRESETS)]
+
+
 class Avatar(QWidget):
-    def __init__(self, text: str = "?", size: int = 36, parent: QWidget | None = None):
+    clicked = Signal()
+
+    def __init__(self, size: int = 36, badge: bool = False, parent: QWidget | None = None):
         super().__init__(parent)
-        self._text = (text or "?")[:1].upper()
+        self._size = size
+        self._text = "?"
+        self._colors = _PRESETS[0]
+        self._pix: QPixmap | None = None
+        self._badge = badge
+        self.setFixedSize(size, size)
+        if badge:
+            self.setCursor(Qt.CursorShape.PointingHandCursor)
+            self.setToolTip("Ganti foto profil")
+
+    def set_wallet(self, wallet: WalletRecord | None, store: AvatarStore | None) -> None:
+        self._pix = None
+        if wallet is None:
+            self._text, self._colors = "?", _PRESETS[0]
+        else:
+            self._text = (wallet.name or "?")[:1].upper()
+            self._colors = avatar_colors(wallet.address)
+            path = store.path(wallet.avatar) if store else None
+            if path is not None:
+                pm = QPixmap(str(path))
+                if not pm.isNull():
+                    dpr = 2.0
+                    side = int(self._size * dpr)
+                    self._pix = pm.scaled(
+                        side, side, Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+                        Qt.TransformationMode.SmoothTransformation,
+                    )
+        self.update()
+
+    @property
+    def has_photo(self) -> bool:
+        return self._pix is not None
+
+    def mousePressEvent(self, event) -> None:
+        if self._badge and event.button() == Qt.MouseButton.LeftButton:
+            self.clicked.emit()
+
+    def paintEvent(self, _event) -> None:
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        s = self._size
+        disc = QRectF(0, 0, s, s)
+        if self._badge:
+            disc = QRectF(0, 0, s - 2, s - 2)
+        clip = QPainterPath()
+        clip.addEllipse(disc)
+        p.save()
+        p.setClipPath(clip)
+        if self._pix is not None:
+            _draw_pixmap_smooth(p, self._pix, disc)
+        else:
+            grad = QLinearGradient(disc.topLeft(), disc.bottomRight())
+            grad.setColorAt(0.0, QColor(self._colors[0]))
+            grad.setColorAt(1.0, QColor(self._colors[1]))
+            p.fillRect(disc, grad)
+        p.restore()
+        if self._pix is None:
+            p.setPen(QColor(theme.TEXT_STRONG))
+            font = QFont(self.font())
+            font.setBold(True)
+            font.setPixelSize(int(s * 0.44))
+            p.setFont(font)
+            p.drawText(disc, Qt.AlignmentFlag.AlignCenter, self._text)
+        p.setPen(QPen(QColor(255, 255, 255, 40), 1))
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        p.drawEllipse(disc.adjusted(0.5, 0.5, -0.5, -0.5))
+        if self._badge:
+            d = max(22, int(s * 0.3))
+            r = QRectF(s - d - 1, s - d - 1, d, d)
+            p.setPen(QPen(QColor(theme.BG), 2))
+            p.setBrush(QColor(theme.TEXT))
+            p.drawEllipse(r)
+            ic = icons.pixmap("camera", int(d * 0.62), theme.BG, 2.2)
+            p.drawPixmap(int(r.x() + d * 0.19), int(r.y() + d * 0.19), ic)
+
+
+# --------------------------------------------------------------------------
+# Ikon token: logo Ethereum / huruf pada lencana warna + lencana jaringan
+# --------------------------------------------------------------------------
+class TokenIcon(QWidget):
+    def __init__(self, token: Token, size: int = 40, parent: QWidget | None = None):
+        super().__init__(parent)
+        self.token = token
         self._size = size
         self.setFixedSize(size, size)
 
-    def set_text(self, text: str) -> None:
-        self._text = (text or "?")[:1].upper()
+    def paintEvent(self, _event) -> None:
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        s = self._size
+        disc = QRectF(0, 0, s, s)
+        t = self.token
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QColor(t.color))
+        p.drawEllipse(disc)
+        if t.is_native:
+            pad = s * 0.22
+            _draw_pixmap_smooth(p, eth_logo(), QRectF(pad, pad, s - 2 * pad, s - 2 * pad))
+        else:
+            p.setPen(QColor("#FFFFFF"))
+            font = QFont(self.font())
+            font.setBold(True)
+            font.setPixelSize(int(s * 0.46))
+            p.setFont(font)
+            p.drawText(disc, Qt.AlignmentFlag.AlignCenter, t.glyph or t.symbol[:1])
+        net = NETWORKS[t.network]
+        if t.network != "ethereum":
+            d = s * 0.42
+            r = QRectF(s - d + 2, s - d + 2, d, d)
+            p.setPen(QPen(QColor(theme.SURFACE), 2))
+            p.setBrush(QColor(net.badge_color))
+            p.drawEllipse(r)
+            p.setPen(QColor("#FFFFFF"))
+            font = QFont(self.font())
+            font.setBold(True)
+            font.setPixelSize(int(d * 0.6))
+            p.setFont(font)
+            p.drawText(r, Qt.AlignmentFlag.AlignCenter, net.badge_text)
+
+
+# --------------------------------------------------------------------------
+# Grafik mini (sparkline)
+# --------------------------------------------------------------------------
+class Sparkline(QWidget):
+    def __init__(self, parent: QWidget | None = None):
+        super().__init__(parent)
+        self._values: list[float] = []
+        self.setFixedSize(92, 38)
+
+    def set_values(self, values: list[float]) -> None:
+        self._values = list(values)
         self.update()
 
     def paintEvent(self, _event) -> None:
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        p.setPen(Qt.PenStyle.NoPen)
-        p.setBrush(QColor(theme.TEXT))
-        p.drawEllipse(self.rect())
-        p.setPen(QColor(theme.BG))
-        font = QFont(self.font())
-        font.setBold(True)
-        font.setPixelSize(int(self._size * 0.45))
-        p.setFont(font)
-        p.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, self._text)
+        w, h = self.width(), self.height()
+        v = self._values
+        if len(v) < 2:
+            pen = QPen(QColor(210, 193, 182, 70), 1.5, Qt.PenStyle.DashLine)
+            p.setPen(pen)
+            p.drawLine(QPointF(2, h / 2), QPointF(w - 2, h / 2))
+            return
+        lo, hi = min(v), max(v)
+        span = (hi - lo) or 1.0
+        pts = [
+            QPointF(2 + i * (w - 4) / (len(v) - 1), h - 4 - (x - lo) / span * (h - 8)) for i, x in enumerate(v)
+        ]
+        color = QColor(theme.SUCCESS if v[-1] >= v[0] else theme.DANGER)
+        fill = QPainterPath(pts[0])
+        for pt in pts[1:]:
+            fill.lineTo(pt)
+        fill.lineTo(QPointF(pts[-1].x(), h))
+        fill.lineTo(QPointF(pts[0].x(), h))
+        fill.closeSubpath()
+        grad = QLinearGradient(0, 0, 0, h)
+        top = QColor(color)
+        top.setAlpha(70)
+        grad.setColorAt(0.0, top)
+        grad.setColorAt(1.0, QColor(color.red(), color.green(), color.blue(), 0))
+        p.fillPath(fill, grad)
+        line = QPainterPath(pts[0])
+        for pt in pts[1:]:
+            line.lineTo(pt)
+        p.setPen(QPen(color, 2, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        p.drawPath(line)
 
 
 # --------------------------------------------------------------------------
@@ -129,12 +389,12 @@ class CircleAction(QWidget):
     def __init__(self, icon_name: str, text: str, parent: QWidget | None = None):
         super().__init__(parent)
         self.btn = QToolButton()
-        self.btn.setIcon(icons.icon(icon_name, 26, theme.BG, 2.1))
-        self.btn.setIconSize(QSize(26, 26))
-        self.btn.setFixedSize(54, 54)
+        self.btn.setIcon(icons.icon(icon_name, 24, theme.BG, 2.1))
+        self.btn.setIconSize(QSize(24, 24))
+        self.btn.setFixedSize(52, 52)
         self.btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn.setStyleSheet(
-            f"QToolButton {{ background: {theme.TEXT}; border-radius: 27px; }}"
+            f"QToolButton {{ background: {theme.TEXT}; border-radius: 26px; }}"
             f"QToolButton:hover {{ background: {theme.TEXT_HOVER}; }}"
             f"QToolButton:pressed {{ background: {theme.ACCENT}; }}"
         )
@@ -143,7 +403,7 @@ class CircleAction(QWidget):
         self.caption.setAlignment(Qt.AlignmentFlag.AlignCenter)
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
-        lay.setSpacing(8)
+        lay.setSpacing(6)
         lay.addWidget(self.btn, 0, Qt.AlignmentFlag.AlignHCenter)
         lay.addWidget(self.caption)
 

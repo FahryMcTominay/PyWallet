@@ -54,6 +54,24 @@ def draw_icon(p: QPainter, name: str) -> None:
         p.drawLine(QPointF(5, 12), QPointF(19, 12))
     elif name == "check":
         _poly(p, (5, 12.5), (10, 17.5), (19, 7))
+    elif name == "camera":
+        p.drawRoundedRect(QRectF(3, 7, 18, 13), 3, 3)
+        _poly(p, (8, 7), (9.5, 4.5), (14.5, 4.5), (16, 7))
+        p.drawEllipse(QPointF(12, 13.5), 3.3, 3.3)
+    elif name == "refresh":
+        p.drawArc(QRectF(4.5, 4.5, 15, 15), 40 * 16, 260 * 16)
+        _poly(p, (18.5, 3.5), (18.8, 8.2), (14.2, 8.5))
+    elif name == "shield":
+        path = QPainterPath()
+        path.moveTo(12, 3)
+        path.lineTo(20, 6)
+        path.lineTo(20, 12)
+        path.cubicTo(20, 16.5, 16.5, 19.8, 12, 21)
+        path.cubicTo(7.5, 19.8, 4, 16.5, 4, 12)
+        path.lineTo(4, 6)
+        path.closeSubpath()
+        p.drawPath(path)
+        _poly(p, (8.8, 12), (11, 14.2), (15.2, 9.8))
     elif name == "lock":
         p.drawRoundedRect(QRectF(5, 11, 14, 10), 2.5, 2.5)
         path = QPainterPath()
@@ -81,6 +99,19 @@ def pixmap(name: str, size: int, color: str | QColor, stroke: float = 1.9, dpr: 
 
 def icon(name: str, size: int, color: str | QColor, stroke: float = 1.9) -> QIcon:
     return QIcon(pixmap(name, size, color, stroke))
+
+
+def dot_icon(color: str | QColor, size: int = 10, dpr: float = 2.0) -> QIcon:
+    pm = QPixmap(int(size * dpr), int(size * dpr))
+    pm.setDevicePixelRatio(dpr)
+    pm.fill(Qt.GlobalColor.transparent)
+    p = QPainter(pm)
+    p.setRenderHint(QPainter.RenderHint.Antialiasing)
+    p.setPen(Qt.PenStyle.NoPen)
+    p.setBrush(QColor(color))
+    p.drawEllipse(QRectF(0, 0, size, size))
+    p.end()
+    return QIcon(pm)
 
 
 def app_icon() -> QIcon:

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import (
+    QFileDialog,
     QHBoxLayout,
     QMainWindow,
     QMessageBox,
@@ -10,7 +11,11 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ..config import APP_NAME, HEARTBEAT_MS
+from ..avatars import IMAGE_FILTER, AvatarError, AvatarStore
+from ..config import APP_NAME, HEARTBEAT_MS, avatars_dir
+from ..networks import MODE_LABELS
+from ..portfolio import PortfolioService
+from ..tokens import active_networks
 from ..vault import Vault
 from . import icons
 from .dialogs import (
@@ -22,25 +27,33 @@ from .dialogs import (
     RenameDialog,
     SecretDialog,
 )
-from .pages import NETWORK_LABEL, EmptyPage, HomePage, SetupPage, UnlockPage
+from .pages import EmptyPage, HomePage, SetupPage, UnlockPage
 
 PAGE_SETUP, PAGE_UNLOCK, PAGE_EMPTY, PAGE_HOME = range(4)
 
 
 class MainWindow(QMainWindow):
-    def __init__(self, vault: Vault):
+    def __init__(
+        self,
+        vault: Vault,
+        service: PortfolioService | None = None,
+        avatar_store: AvatarStore | None = None,
+        async_loading: bool = True,
+    ):
         super().__init__()
         self.vault = vault
+        self.store = avatar_store or AvatarStore(avatars_dir())
         self._unlocked = False
         self.setWindowTitle(APP_NAME)
         self.setWindowIcon(icons.app_icon())
-        self.resize(460, 820)
-        self.setMinimumSize(400, 640)
+        self.resize(460, 840)
+        self.setMinimumSize(400, 660)
 
         self.setup_page = SetupPage(vault)
         self.unlock_page = UnlockPage(vault)
         self.empty_page = EmptyPage()
-        self.home = HomePage(vault)
+        self.home = HomePage(vault, self.store, service)
+        self.home.wallet_tab.run_in_thread = async_loading
 
         self.stack = QStackedWidget()
         for page in (self.setup_page, self.unlock_page, self.empty_page, self.home):
@@ -74,6 +87,8 @@ class MainWindow(QMainWindow):
         pt.viewSecretRequested.connect(self.view_secret)
         pt.deleteRequested.connect(self.delete_wallet)
         pt.lockRequested.connect(self.lock_app)
+        pt.avatarRequested.connect(self.change_avatar)
+        pt.removeAvatarRequested.connect(self.remove_avatar)
 
         self._heartbeat = QTimer(self)
         self._heartbeat.timeout.connect(self._beat)
@@ -162,13 +177,46 @@ class MainWindow(QMainWindow):
             return
         dlg = DeleteWalletDialog(self.vault, wallet, self)
         if dlg.exec() and dlg.deleted:
+            self.store.remove(wallet.avatar)   # foto profil ikut dihapus bersama wallet-nya
             self.refresh_all()
             self.home.show_tab(0)
 
+    # ------------------------------------------------------------------
+    # Foto profil
+    # ------------------------------------------------------------------
+    def change_avatar(self, source: str | None = None) -> None:
+        """Pilih gambar dari komputer. `source` hanya dipakai tes (melewati dialog file)."""
+        wallet = self.vault.get_active_wallet()
+        if wallet is None:
+            return
+        if not source:
+            source, _ = QFileDialog.getOpenFileName(self, "Pilih foto profil", "", IMAGE_FILTER)
+            if not source:
+                return
+        try:
+            filename = self.store.import_image(wallet.id, source)
+        except AvatarError as exc:
+            QMessageBox.warning(self, "Foto profil", str(exc))
+            return
+        self.vault.set_avatar(wallet.id, filename)
+        self.store.remove(wallet.avatar)       # buang foto lama
+        self.home.refresh()
+
+    def remove_avatar(self) -> None:
+        wallet = self.vault.get_active_wallet()
+        if wallet is None or not wallet.avatar:
+            return
+        self.vault.set_avatar(wallet.id, None)
+        self.store.remove(wallet.avatar)
+        self.home.refresh()
+
+    # ------------------------------------------------------------------
     def receive(self) -> None:
         wallet = self.vault.get_active_wallet()
         if wallet:
-            ReceiveDialog(wallet, NETWORK_LABEL, self).exec()
+            mode = self.home.wallet_tab.mode
+            names = ", ".join(n.name for n in active_networks(mode))
+            ReceiveDialog(wallet, f"{names} ({MODE_LABELS[mode]})", self).exec()
 
     def lock_app(self) -> None:
         self.vault.lock_now()

@@ -80,6 +80,13 @@ QPushButton#menuRow {{ text-align: left; padding: 14px 16px; border-radius: 14px
 QPushButton#menuRowDanger {{ text-align: left; padding: 14px 16px; border-radius: 14px;
                              color: {DANGER}; border-color: {SURFACE}; }}
 QPushButton#menuRowDanger:hover {{ background: rgba(240, 154, 138, 40); }}
+QPushButton#pill {{ border-radius: 12px; padding: 4px 12px; font-size: 12px; background: rgba(27, 60, 83, 110);
+                    border: 1px solid rgba(210, 193, 182, 70); color: {TEXT_STRONG}; }}
+QPushButton#pill:hover {{ background: rgba(27, 60, 83, 190); }}
+QPushButton#pill:checked {{ background: {TEXT}; color: {BG}; border-color: {TEXT}; font-weight: 700; }}
+QPushButton#modeChip {{ border-radius: 15px; padding: 6px 12px 6px 10px; font-size: 12px; background: {SURFACE};
+                        border: 1px solid {ACCENT}; color: {TEXT_STRONG}; }}
+QPushButton#modeChip:hover {{ background: {ACCENT}; }}
 QPushButton#segment {{ border-radius: 10px; padding: 9px 14px; background: transparent;
                        border: 1px solid {ACCENT}; }}
 QPushButton#segment:checked {{ background: {TEXT}; color: {BG}; border-color: {TEXT}; font-weight: 700; }}
