@@ -4,7 +4,7 @@ import pytest
 
 from pywallet import wallet_core
 from pywallet.config import GRACE_SECONDS
-from pywallet.db import Database
+from pywallet.db import SCHEMA_VERSION, Database
 from pywallet.vault import (
     SECRET_MNEMONIC,
     SECRET_PRIVATE_KEY,
@@ -270,4 +270,4 @@ def test_persists_across_reopen(tmp_path):
     assert v2.is_initialized()
     assert [w.name for w in v2.list_wallets()] == ["A"]
     assert v2.reveal_secret(v2.list_wallets()[0].id, PW).value == TEST_MNEMONIC
-    assert sqlite3.connect(path).execute("PRAGMA user_version").fetchone()[0] == 1
+    assert sqlite3.connect(path).execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION

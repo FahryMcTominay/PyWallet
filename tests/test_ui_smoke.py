@@ -1,4 +1,4 @@
-"""Smoke test UI (tanpa layar, memakai platform Qt 'offscreen')."""
+"""Smoke test UI (tanpa layar, memakai platform Qt 'offscreen' dan jaringan palsu)."""
 import os
 
 import pytest
@@ -6,11 +6,14 @@ import pytest
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 pytest.importorskip("PySide6")
 
+from PySide6.QtGui import QColor, QImage  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
 from pywallet import wallet_core  # noqa: E402
+from pywallet.avatars import AvatarStore  # noqa: E402
 from pywallet.config import GRACE_SECONDS  # noqa: E402
 from pywallet.db import Database  # noqa: E402
+from pywallet.portfolio import PortfolioService  # noqa: E402
 from pywallet.ui import theme  # noqa: E402
 from pywallet.ui.dialogs import (  # noqa: E402
     CreateWalletDialog,
@@ -21,6 +24,8 @@ from pywallet.ui.dialogs import (  # noqa: E402
 )
 from pywallet.ui.main_window import PAGE_EMPTY, PAGE_HOME, PAGE_SETUP, PAGE_UNLOCK, MainWindow  # noqa: E402
 from pywallet.vault import Vault  # noqa: E402
+
+from .fakes import FakeHttp, install_standard, make_rpc, rpc_urls  # noqa: E402
 
 PW = "rahasia-kuat-123"
 FAST_KDF = {"n": 2**10, "r": 8, "p": 1}
@@ -58,8 +63,27 @@ def ready_vault(vault):
     return vault
 
 
-def test_first_run_shows_setup_then_empty(app, vault):
-    win = MainWindow(vault)
+@pytest.fixture
+def make_window(tmp_path):
+    """Jendela dengan jaringan palsu (tanpa thread, tanpa akses internet) dan folder avatar sementara."""
+
+    def build(vault, http=None):
+        service = PortfolioService(http or FakeHttp())   # FakeHttp kosong = semua permintaan gagal
+        store = AvatarStore(tmp_path / "avatars")
+        return MainWindow(vault, service=service, avatar_store=store, async_loading=False)
+
+    return build
+
+
+def photo(path, color="#ff8800", w=300, h=200):
+    img = QImage(w, h, QImage.Format.Format_RGB32)
+    img.fill(QColor(color))
+    assert img.save(str(path))
+    return str(path)
+
+
+def test_first_run_shows_setup_then_empty(app, vault, make_window):
+    win = make_window(vault)
     win.start()
     assert win.stack.currentIndex() == PAGE_SETUP
     win.setup_page.pw1.edit.setText("pendek")
@@ -76,12 +100,11 @@ def test_first_run_shows_setup_then_empty(app, vault):
     assert win.stack.currentIndex() == PAGE_EMPTY
 
 
-def test_unlock_flow_and_grace(app, ready_vault, clock):
+def test_unlock_flow_and_grace(app, ready_vault, clock, make_window):
     v = ready_vault
-    # Belum pernah aktif -> wajib password
-    win = MainWindow(v)
+    win = make_window(v)
     win.start()
-    assert win.stack.currentIndex() == PAGE_UNLOCK
+    assert win.stack.currentIndex() == PAGE_UNLOCK       # belum pernah aktif -> wajib password
     win.unlock_page.pw.edit.setText("salah")
     win.unlock_page._submit()
     assert win.stack.currentIndex() == PAGE_UNLOCK
@@ -89,32 +112,30 @@ def test_unlock_flow_and_grace(app, ready_vault, clock):
     win.unlock_page._submit()
     assert win.stack.currentIndex() == PAGE_EMPTY        # belum ada wallet
 
-    # Tutup aplikasi, buka lagi < 5 menit -> tanpa password
-    win.close()
+    win.close()                                          # buka lagi < 5 menit -> tanpa password
     clock.t += GRACE_SECONDS - 10
-    win2 = MainWindow(v)
+    win2 = make_window(v)
     win2.start()
-    assert win2.stack.currentIndex() == PAGE_EMPTY       # langsung masuk, bukan halaman unlock
+    assert win2.stack.currentIndex() == PAGE_EMPTY
 
-    # Buka lagi > 5 menit -> minta password
-    win2.close()
+    win2.close()                                         # buka lagi > 5 menit -> minta password
     clock.t += GRACE_SECONDS + 1
-    win3 = MainWindow(v)
+    win3 = make_window(v)
     win3.start()
     assert win3.stack.currentIndex() == PAGE_UNLOCK
 
 
-def test_lock_now_forces_password(app, ready_vault):
+def test_lock_now_forces_password(app, ready_vault, make_window):
     v = ready_vault
     v.import_mnemonic("A", HARDHAT_MNEMONIC, PW)
-    win = MainWindow(v)
+    win = make_window(v)
     win.start()
     win._enter_app()
     assert win.stack.currentIndex() == PAGE_HOME
     win.lock_app()
     assert win.stack.currentIndex() == PAGE_UNLOCK
     win.close()
-    win2 = MainWindow(v)
+    win2 = make_window(v)
     win2.start()
     assert win2.stack.currentIndex() == PAGE_UNLOCK
 
@@ -212,11 +233,11 @@ def test_password_dialog_keeps_open_on_wrong_password(app, ready_vault):
     assert d.result_value.value == HARDHAT_MNEMONIC
 
 
-def test_lobby_shows_active_wallet_and_switching(app, ready_vault):
+def test_lobby_shows_active_wallet_and_switching(app, ready_vault, make_window):
     v = ready_vault
     a = v.import_mnemonic("Pertama", HARDHAT_MNEMONIC, PW)
     v.create_wallet("Kedua", wallet_core.generate_mnemonic(), PW)
-    win = MainWindow(v)
+    win = make_window(v)
     win.start()
     win._enter_app()
     assert win.home.wallet_tab.switcher.text() == "Kedua"
@@ -224,3 +245,96 @@ def test_lobby_shows_active_wallet_and_switching(app, ready_vault):
     assert win.home.wallet_tab.switcher.text() == "Pertama"
     assert win.home.profile_tab.name.text() == "Pertama"
     assert win.home.profile_tab.secret_btn.text() == "Lihat seed phrase"
+
+
+# --- foto profil ---------------------------------------------------------------
+def test_avatar_set_replace_remove_and_cleanup_on_delete(app, ready_vault, make_window, tmp_path):
+    v = ready_vault
+    v.import_mnemonic("A", HARDHAT_MNEMONIC, PW)
+    win = make_window(v)
+    win.start()
+    win._enter_app()
+    store = win.store
+    pt = win.home.profile_tab
+    assert not pt.avatar.has_photo
+
+    win.change_avatar(photo(tmp_path / "satu.png"))
+    first = v.get_active_wallet().avatar
+    assert first and store.path(first) is not None
+    assert pt.avatar.has_photo and win.home.wallet_tab.avatar.has_photo
+
+    win.change_avatar(photo(tmp_path / "dua.png", "#0088ff"))
+    second = v.get_active_wallet().avatar
+    assert second != first
+    assert store.path(first) is None and store.path(second) is not None   # foto lama dibuang
+
+    win.remove_avatar()
+    assert v.get_active_wallet().avatar is None
+    assert store.path(second) is None and not pt.avatar.has_photo
+
+    win.change_avatar(photo(tmp_path / "tiga.png"))
+    third = v.get_active_wallet().avatar
+    wallet = v.get_active_wallet()
+    v.delete_wallet(wallet.id, PW)
+    store.remove(wallet.avatar)
+    assert store.path(third) is None
+
+
+def test_avatar_rejects_non_image(app, ready_vault, make_window, tmp_path, monkeypatch):
+    from PySide6.QtWidgets import QMessageBox
+
+    shown = []
+    monkeypatch.setattr(QMessageBox, "warning", lambda *a, **k: shown.append(a[2]))
+    v = ready_vault
+    v.import_mnemonic("A", HARDHAT_MNEMONIC, PW)
+    win = make_window(v)
+    win.start()
+    win._enter_app()
+    fake = tmp_path / "bukan_gambar.png"
+    fake.write_text("ini teks, bukan gambar")
+    win.change_avatar(str(fake))
+    assert shown and v.get_active_wallet().avatar is None
+
+
+# --- switch satuan & jaringan -----------------------------------------------------
+def test_unit_and_network_switch_render_and_persist(app, ready_vault, make_window):
+    v = ready_vault
+    v.import_mnemonic("A", HARDHAT_MNEMONIC, PW)
+    fake = FakeHttp()
+    install_standard(fake)                                        # ETH $3000, 1 USD = Rp16.000
+    fake.post_handlers[rpc_urls("ethereum")[0]] = make_rpc(2 * 10**18)       # 2 ETH di mainnet
+    fake.post_handlers[rpc_urls("sepolia")[0]] = make_rpc(5 * 10**17)        # 0,5 ETH di Sepolia
+
+    win = make_window(v, fake)
+    win.start()
+    win._enter_app()
+    wt = win.home.wallet_tab
+    assert wt.mode == "testnet"                                   # bawaan aman: testnet
+    wt.set_unit("eth")
+    assert wt.balance.text() == "0.5 ETH"                         # saldo ETH Sepolia
+    wt.set_unit("usd")
+    assert wt.balance.text() == "$0.00"                           # testnet tidak bernilai uang
+    assert "tidak bernilai uang" in wt.note_lbl.text()
+
+    wt.set_mode("mainnet")
+    assert wt.balance.text() == "$6,000.00"
+    wt.set_unit("idr")
+    assert wt.balance.text() == "Rp96.000.000"
+    wt.set_unit("eth")
+    assert wt.balance.text() == "2 ETH"
+
+    assert v.get_pref("network_mode") == "mainnet" and v.get_pref("display_unit") == "eth"
+    win2 = make_window(v, fake)                                   # pilihan diingat saat dibuka ulang
+    assert win2.home.wallet_tab.mode == "mainnet" and win2.home.wallet_tab.unit == "eth"
+
+
+def test_lobby_lists_only_native_eth_while_extended_list_is_off(app, ready_vault, make_window):
+    v = ready_vault
+    v.import_mnemonic("A", HARDHAT_MNEMONIC, PW)
+    win = make_window(v)
+    win.start()
+    win._enter_app()
+    wt = win.home.wallet_tab
+    for mode in ("testnet", "mainnet"):
+        wt.set_mode(mode)
+        assert wt.count_lbl.text().endswith("1 aset")
