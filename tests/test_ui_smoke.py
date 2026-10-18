@@ -357,3 +357,28 @@ def test_decor_toggle_in_profile_persists(app, ready_vault, make_window):
     assert not decor.ENABLED and "mati" in win2.home.profile_tab.decor_btn.text()
     win2.home.profile_tab.decor_btn.click()
     assert decor.ENABLED and v.get_pref("decor") == "1"
+
+
+def test_tab_switch_slides_and_settles(app, ready_vault, make_window):
+    from PySide6.QtTest import QTest
+
+    v = ready_vault
+    v.create_wallet("Utama", HARDHAT_MNEMONIC, PW)
+    win = make_window(v)
+    win.start()
+    win._enter_app()
+    win.show()
+    tabs = win.home.tabs
+    QTest.qWait(50)
+    win.home._nav_group.button(1).click()            # Swap
+    assert tabs.is_animating()
+    QTest.qWait(tabs.DURATION_MS + 150)
+    assert not tabs.is_animating() and tabs.currentIndex() == 1
+    assert tabs.currentWidget().pos().x() == 0 and tabs.currentWidget().isVisible()
+    assert not win.home.wallet_tab.isVisible()
+    win.home._nav_group.button(2).click()            # klik beruntun: tidak boleh macet
+    win.home._nav_group.button(0).click()
+    QTest.qWait(tabs.DURATION_MS + 150)
+    assert tabs.currentIndex() == 0 and tabs.currentWidget().pos().x() == 0
+    assert not win.home.profile_tab.isVisible() and not win.home.swap_tab.isVisible()
+    win.close()

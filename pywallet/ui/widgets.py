@@ -2,7 +2,18 @@
 from __future__ import annotations
 
 import qrcode
-from PySide6.QtCore import QPointF, QRectF, QSize, Qt, QTimer, Signal
+from PySide6.QtCore import (
+    QEasingCurve,
+    QParallelAnimationGroup,
+    QPoint,
+    QPointF,
+    QPropertyAnimation,
+    QRectF,
+    QSize,
+    Qt,
+    QTimer,
+    Signal,
+)
 from PySide6.QtGui import (
     QColor,
     QFont,
@@ -21,6 +32,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QSizePolicy,
+    QStackedWidget,
     QToolButton,
     QToolTip,
     QVBoxLayout,
@@ -403,19 +415,17 @@ class CircleAction(QWidget):
         self.caption = label(text)
         self.caption.setAlignment(Qt.AlignmentFlag.AlignCenter)
         lay = QVBoxLayout(self)
-        lay.setContentsMargins(0, 10, 0, 0)   # ruang untuk telinga kecil di atas tombol
+        lay.setContentsMargins(0, 8, 0, 0)   # ruang untuk telinga coretan di atas tombol
         lay.setSpacing(6)
         lay.addWidget(self.btn, 0, Qt.AlignmentFlag.AlignHCenter)
         lay.addWidget(self.caption)
 
     def paintEvent(self, _event) -> None:
-        """Aksen kecil: sepasang telinga kucing bergaya sketsa yang mengintip dari balik tombol."""
+        """Aksen kecil: sepasang telinga kucing gaya coretan pensil yang mengintip dari balik tombol."""
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         g = self.btn.geometry()
-        decor.draw_ears_on_circle(
-            p, QRectF(g), 17, theme.TEXT, 0.85, fill=theme.ACCENT, fill_alpha=1.0, spread=40
-        )
+        decor.draw_doodle_ears_on_circle(p, QRectF(g), 12, theme.TEXT, 0.55, spread=38)
 
 
 # --------------------------------------------------------------------------
@@ -490,3 +500,61 @@ class Card(QFrame):
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
         self.setObjectName("card")
+
+
+# --------------------------------------------------------------------------
+# Tumpukan halaman dengan animasi geser
+# --------------------------------------------------------------------------
+class SlideStack(QStackedWidget):
+    """QStackedWidget yang menggeser halaman saat berpindah: ke kanan jika indeks naik, ke kiri jika turun.
+
+    Animasi dilewati bila widget belum tampil (mis. saat tes) agar perpindahan tetap instan dan aman."""
+
+    DURATION_MS = 280
+
+    def __init__(self, parent: QWidget | None = None):
+        super().__init__(parent)
+        self.animated = True
+        self._anim: QParallelAnimationGroup | None = None
+        self._pending: int | None = None
+
+    def is_animating(self) -> bool:
+        return self._anim is not None
+
+    def slide_to(self, index: int) -> None:
+        if self._anim is not None:           # klik beruntun: selesaikan geseran sebelumnya dulu
+            self._finish()
+        cur = self.currentIndex()
+        if index == cur or not (0 <= index < self.count()):
+            return
+        if not self.animated or not self.isVisible() or self.width() < 2:
+            self.setCurrentIndex(index)
+            return
+        old, new = self.currentWidget(), self.widget(index)
+        w, h = self.width(), self.height()
+        direction = 1 if index > cur else -1
+        new.setGeometry(direction * w, 0, w, h)
+        new.show()
+        new.raise_()
+        group = QParallelAnimationGroup(self)
+        for widget, start, end in ((new, direction * w, 0), (old, 0, -direction * w)):
+            a = QPropertyAnimation(widget, b"pos", group)
+            a.setDuration(self.DURATION_MS)
+            a.setStartValue(QPoint(start, 0))
+            a.setEndValue(QPoint(end, 0))
+            a.setEasingCurve(QEasingCurve.Type.OutCubic)
+            group.addAnimation(a)
+        self._anim, self._pending, self._old = group, index, old
+        group.finished.connect(self._finish)
+        group.start()
+
+    def _finish(self) -> None:
+        group, index, old = self._anim, self._pending, self._old
+        if group is None:
+            return
+        self._anim = self._pending = None
+        group.stop()
+        group.deleteLater()
+        self.setCurrentIndex(index)           # menyembunyikan halaman lama dan menata halaman baru
+        old.setGeometry(self.rect())          # kembalikan posisi halaman lama untuk perpindahan berikutnya
+        self.currentWidget().setGeometry(self.rect())

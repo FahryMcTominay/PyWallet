@@ -188,7 +188,14 @@ class MainWindow(QMainWindow):
     # Foto profil
     # ------------------------------------------------------------------
     def change_avatar(self, source: str | None = None) -> None:
-        """Pilih gambar dari komputer. `source` hanya dipakai tes (melewati dialog file)."""
+        """Ganti foto profil wallet aktif. `source` hanya dipakai tes (melewati dialog file).
+
+        Alur (penjelasan lengkap: docs/PANDUAN.md, bagian 3):
+          1. pilih file gambar dari komputer
+          2. AvatarStore memotong persegi, memperkecil, lalu menyimpan salinan di folder avatars
+          3. nama file baru dicatat di database (kolom `avatar` milik wallet)
+          4. foto lama dihapus, lalu semua halaman digambar ulang
+        """
         wallet = self.vault.get_active_wallet()
         if wallet is None:
             return

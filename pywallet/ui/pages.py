@@ -15,7 +15,6 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QScrollArea,
-    QStackedWidget,
     QToolButton,
     QVBoxLayout,
     QWidget,
@@ -49,6 +48,7 @@ from .widgets import (
     GradientCard,
     NavButton,
     PasswordField,
+    SlideStack,
     Sparkline,
     TokenIcon,
     copy_to_clipboard,
@@ -930,7 +930,7 @@ class HomePage(QWidget):
         self.swap_tab = SwapTab()
         self.profile_tab = ProfileTab(vault, avatar_store)
 
-        self.tabs = QStackedWidget()
+        self.tabs = SlideStack()
         for t in (self.wallet_tab, self.swap_tab, self.profile_tab):
             self.tabs.addWidget(t)
 
@@ -949,7 +949,7 @@ class HomePage(QWidget):
             nav_lay.addWidget(b)
             if i == 0:
                 b.setChecked(True)
-        group.idClicked.connect(self.tabs.setCurrentIndex)
+        group.idClicked.connect(self.tabs.slide_to)
         self._nav_group = group
 
         lay = QVBoxLayout(self)
@@ -968,4 +968,4 @@ class HomePage(QWidget):
 
     def show_tab(self, index: int) -> None:
         self._nav_group.button(index).setChecked(True)
-        self.tabs.setCurrentIndex(index)
+        self.tabs.slide_to(index)
