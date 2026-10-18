@@ -14,7 +14,7 @@ from pywallet.avatars import AvatarStore  # noqa: E402
 from pywallet.config import GRACE_SECONDS  # noqa: E402
 from pywallet.db import Database  # noqa: E402
 from pywallet.portfolio import PortfolioService  # noqa: E402
-from pywallet.ui import theme  # noqa: E402
+from pywallet.ui import decor, theme  # noqa: E402
 from pywallet.ui.dialogs import (  # noqa: E402
     CreateWalletDialog,
     DeleteWalletDialog,
@@ -338,3 +338,22 @@ def test_lobby_lists_only_native_eth_while_extended_list_is_off(app, ready_vault
     for mode in ("testnet", "mainnet"):
         wt.set_mode(mode)
         assert wt.count_lbl.text().endswith("1 aset")
+
+
+def test_decor_toggle_in_profile_persists(app, ready_vault, make_window):
+    v = ready_vault
+    v.create_wallet("Utama", HARDHAT_MNEMONIC, PW)
+    win = make_window(v)
+    win.start()
+    win._enter_app()
+    pt = win.home.profile_tab
+    assert decor.ENABLED and "hidup" in pt.decor_btn.text()
+    pt.decor_btn.click()
+    assert not decor.ENABLED and "mati" in pt.decor_btn.text()
+    assert v.get_pref("decor") == "0"
+    for w in (win.home.wallet_tab, win.home.swap_tab, pt):
+        w.grab()                                  # tetap bisa dirender tanpa motif
+    win2 = make_window(v)                         # pilihan diingat saat aplikasi dibuka lagi
+    assert not decor.ENABLED and "mati" in win2.home.profile_tab.decor_btn.text()
+    win2.home.profile_tab.decor_btn.click()
+    assert decor.ENABLED and v.get_pref("decor") == "1"
