@@ -17,7 +17,7 @@ from ..networks import MODE_LABELS
 from ..portfolio import PortfolioService
 from ..tokens import active_networks
 from ..vault import Vault
-from . import icons
+from . import decor, icons
 from .dialogs import (
     CreateWalletDialog,
     DeleteWalletDialog,
@@ -49,6 +49,7 @@ class MainWindow(QMainWindow):
         self.resize(460, 840)
         self.setMinimumSize(400, 660)
 
+        decor.set_enabled(vault.get_pref("decor", "1") != "0")
         self.setup_page = SetupPage(vault)
         self.unlock_page = UnlockPage(vault)
         self.empty_page = EmptyPage()
@@ -66,7 +67,7 @@ class MainWindow(QMainWindow):
         lay.setContentsMargins(0, 0, 0, 0)
         lay.addStretch(1)
         self.stack.setMaximumWidth(620)
-        lay.addWidget(self.stack, 100)
+        lay.addWidget(self.stack, 10_000)   # pinggir hanya terisi saat jendela lebih lebar dari 620 px
         lay.addStretch(1)
         self.setCentralWidget(root)
 
@@ -89,6 +90,8 @@ class MainWindow(QMainWindow):
         pt.lockRequested.connect(self.lock_app)
         pt.avatarRequested.connect(self.change_avatar)
         pt.removeAvatarRequested.connect(self.remove_avatar)
+        pt.decorToggled.connect(self.toggle_decor)
+        pt.set_decor_state(decor.ENABLED)
 
         self._heartbeat = QTimer(self)
         self._heartbeat.timeout.connect(self._beat)
@@ -211,6 +214,15 @@ class MainWindow(QMainWindow):
         self.home.refresh()
 
     # ------------------------------------------------------------------
+    def toggle_decor(self) -> None:
+        on = not decor.ENABLED
+        decor.set_enabled(on)
+        self.vault.set_pref("decor", "1" if on else "0")
+        self.home.profile_tab.set_decor_state(on)
+        for page in (self.setup_page, self.unlock_page, self.empty_page):
+            page.update()
+        self.home.repaint_decor()
+
     def receive(self) -> None:
         wallet = self.vault.get_active_wallet()
         if wallet:

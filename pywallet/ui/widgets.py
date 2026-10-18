@@ -32,7 +32,7 @@ from ..config import CLIPBOARD_CLEAR_SECONDS, assets_dir
 from ..networks import NETWORKS
 from ..tokens import Token
 from ..vault import WalletRecord
-from . import icons, theme
+from . import decor, icons, theme
 
 
 # --------------------------------------------------------------------------
@@ -99,8 +99,8 @@ class GlowPage(QWidget):
         p.fillRect(self.rect(), QColor(theme.BG))
         w, h = self.width(), self.height()
         g1 = QRadialGradient(QPointF(w * 0.12, h * 0.08), max(w, h) * 0.75)
-        c1 = QColor(theme.ACCENT)
-        c1.setAlpha(130)
+        c1 = QColor(theme.ACCENT_DEEP)
+        c1.setAlpha(170)
         g1.setColorAt(0.0, c1)
         g1.setColorAt(1.0, QColor(0, 0, 0, 0))
         p.fillRect(self.rect(), g1)
@@ -110,6 +110,7 @@ class GlowPage(QWidget):
         g2.setColorAt(0.0, c2)
         g2.setColorAt(1.0, QColor(0, 0, 0, 0))
         p.fillRect(self.rect(), g2)
+        decor.paint_backdrop(p, w, h, "login")
 
 
 # --------------------------------------------------------------------------
@@ -127,20 +128,20 @@ class GradientCard(QFrame):
         path = QPainterPath()
         path.addRoundedRect(rect, self._radius, self._radius)
         grad = QLinearGradient(rect.topLeft(), rect.bottomRight())
-        grad.setColorAt(0.0, QColor(theme.ACCENT))
+        grad.setColorAt(0.0, QColor(theme.ACCENT_DEEP))
         grad.setColorAt(1.0, QColor(theme.SURFACE))
         p.fillPath(path, grad)
         p.setClipPath(path)
-        glow = QColor(theme.TEXT)
-        glow.setAlpha(24)
+        glow = QColor(theme.ACCENT)
+        glow.setAlpha(34)
         p.setPen(Qt.PenStyle.NoPen)
         p.setBrush(glow)
         p.drawEllipse(QPointF(rect.right() - 20, rect.top() + 10), rect.height() * 0.55, rect.height() * 0.55)
-        glow.setAlpha(14)
+        glow.setAlpha(20)
         p.setBrush(glow)
         p.drawEllipse(QPointF(rect.right() - rect.width() * 0.35, rect.bottom() + 20), rect.height() * 0.5, rect.height() * 0.5)
         p.setClipping(False)
-        pen = QPen(QColor(210, 193, 182, 55), 1)
+        pen = QPen(QColor(219, 208, 204, 50), 1)
         p.setPen(pen)
         p.setBrush(Qt.BrushStyle.NoBrush)
         p.drawPath(path)
@@ -187,14 +188,14 @@ class PasswordField(QWidget):
 # Avatar wallet: foto kustom, atau gradien unik per alamat + huruf pertama nama
 # --------------------------------------------------------------------------
 _PRESETS = [
-    ("#456882", "#D2C1B6"),
-    ("#2E6F8E", "#9ED0D8"),
-    ("#5B7DB1", "#C9D6F0"),
-    ("#3E7C72", "#BFE3D0"),
-    ("#8A6F9E", "#E0CFEA"),
-    ("#B5835A", "#F0D9B5"),
-    ("#2B5D7A", "#D2C1B6"),
-    ("#C0766B", "#F1D1C6"),
+    ("#2C6A78", "#DBD0CC"),
+    ("#02596C", "#43B8C9"),
+    ("#3A4044", "#9AA6A8"),
+    ("#185565", "#86C9D3"),
+    ("#4E5A5E", "#DBD0CC"),
+    ("#0B7285", "#A5E3EC"),
+    ("#8C5A44", "#F0D6C4"),
+    ("#5E7F86", "#E6EEF0"),
 ]
 
 
@@ -281,7 +282,7 @@ class Avatar(QWidget):
             d = max(22, int(s * 0.3))
             r = QRectF(s - d - 1, s - d - 1, d, d)
             p.setPen(QPen(QColor(theme.BG), 2))
-            p.setBrush(QColor(theme.TEXT))
+            p.setBrush(QColor(theme.ACCENT))
             p.drawEllipse(r)
             ic = icons.pixmap("camera", int(d * 0.62), theme.BG, 2.2)
             p.drawPixmap(int(r.x() + d * 0.19), int(r.y() + d * 0.19), ic)
@@ -394,18 +395,27 @@ class CircleAction(QWidget):
         self.btn.setFixedSize(52, 52)
         self.btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn.setStyleSheet(
-            f"QToolButton {{ background: {theme.TEXT}; border-radius: 26px; }}"
-            f"QToolButton:hover {{ background: {theme.TEXT_HOVER}; }}"
-            f"QToolButton:pressed {{ background: {theme.ACCENT}; }}"
+            f"QToolButton {{ background: {theme.ACCENT}; border-radius: 26px; }}"
+            f"QToolButton:hover {{ background: {theme.ACCENT_HOVER}; }}"
+            f"QToolButton:pressed {{ background: {theme.ACCENT_PRESSED}; }}"
         )
         self.btn.clicked.connect(self.clicked)
         self.caption = label(text)
         self.caption.setAlignment(Qt.AlignmentFlag.AlignCenter)
         lay = QVBoxLayout(self)
-        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setContentsMargins(0, 10, 0, 0)   # ruang untuk telinga kecil di atas tombol
         lay.setSpacing(6)
         lay.addWidget(self.btn, 0, Qt.AlignmentFlag.AlignHCenter)
         lay.addWidget(self.caption)
+
+    def paintEvent(self, _event) -> None:
+        """Aksen kecil: sepasang telinga kucing bergaya sketsa yang mengintip dari balik tombol."""
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        g = self.btn.geometry()
+        decor.draw_ears_on_circle(
+            p, QRectF(g), 17, theme.TEXT, 0.85, fill=theme.ACCENT, fill_alpha=1.0, spread=40
+        )
 
 
 # --------------------------------------------------------------------------
@@ -427,7 +437,7 @@ class NavButton(QAbstractButton):
     def paintEvent(self, _event) -> None:
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        color = QColor(theme.TEXT_STRONG) if self.isChecked() else QColor(theme.TEXT)
+        color = QColor(theme.ACCENT_HOVER) if self.isChecked() else QColor(theme.TEXT)
         if not self.isChecked():
             color.setAlpha(150)
         pm = icons.pixmap(self._icon_name, 24, color, 1.9)
@@ -441,7 +451,7 @@ class NavButton(QAbstractButton):
         p.drawText(QRectF(0, 36, self.width(), 20), Qt.AlignmentFlag.AlignCenter, self.text())
         if self.isChecked():
             p.setPen(Qt.PenStyle.NoPen)
-            p.setBrush(QColor(theme.TEXT))
+            p.setBrush(QColor(theme.ACCENT))
             p.drawRoundedRect(QRectF((self.width() - 28) / 2, 0, 28, 3), 1.5, 1.5)
 
 

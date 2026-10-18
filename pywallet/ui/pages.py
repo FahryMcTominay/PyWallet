@@ -39,7 +39,7 @@ from ..networks import MODE_LABELS, MODE_MAINNET, MODE_TESTNET, MODES, NETWORKS
 from ..portfolio import AssetRow, PortfolioService, Snapshot, sort_assets
 from ..tokens import TOKENS, active_networks, tokens_for_mode
 from ..vault import SECRET_MNEMONIC, Vault, VaultError, WalletRecord, validate_new_password
-from . import fonts, icons, theme
+from . import decor, fonts, icons, theme
 from .dialogs import button
 from .widgets import (
     Avatar,
@@ -85,13 +85,18 @@ class LoginPage(GlowPage):
         self.col.setContentsMargins(0, 0, 0, 0)
         self.col.setSpacing(12)
         outer.addStretch(2)
-        outer.addWidget(col_host, 0, Qt.AlignmentFlag.AlignHCenter)
+        row = QHBoxLayout()
+        row.addStretch(1)
+        row.addWidget(col_host, 100)      # lebar penuh sampai batas 400 px, lalu rata tengah
+        row.addStretch(1)
+        outer.addLayout(row)
         outer.addStretch(3)
 
         mark = icons.app_icon().pixmap(QSize(84, 84))
         mark_lbl = label()
         mark_lbl.setPixmap(mark)
         mark_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        mark_lbl.setFixedHeight(88)
         self.col.addWidget(mark_lbl)
         brand = label("PyWallet", "brand")
         brand.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -489,7 +494,7 @@ class WalletTab(QWidget):
         root.addLayout(header)
         underline = QFrame()
         underline.setFixedSize(34, 3)
-        underline.setStyleSheet(f"background: {theme.TEXT}; border-radius: 1px;")
+        underline.setStyleSheet(f"background: {theme.ACCENT}; border-radius: 1px;")
         root.addSpacing(4)
         root.addWidget(underline)
         root.addWidget(divider())
@@ -515,11 +520,12 @@ class WalletTab(QWidget):
         p = QPainter(self)
         p.fillRect(self.rect(), QColor(theme.BG))
         grad = QLinearGradient(0, 0, 0, 260)
-        top = QColor(theme.ACCENT)
-        top.setAlpha(110)
+        top = QColor(theme.ACCENT_DEEP)
+        top.setAlpha(200)
         grad.setColorAt(0.0, top)
         grad.setColorAt(1.0, QColor(theme.BG))
         p.fillRect(QRectF(0, 0, self.width(), 260), grad)
+        decor.paint_backdrop(p, self.width(), self.height(), "lobby")
 
     # --- data ----------------------------------------------------------------------------------------
     def refresh(self) -> None:
@@ -738,7 +744,22 @@ class WalletTab(QWidget):
 # ==========================================================================
 # Tab Swap (placeholder sampai tahap 5)
 # ==========================================================================
-class SwapTab(QWidget):
+class _BackdropMixin:
+    """Latar polos + motif dekoratif beropacity rendah (lihat decor.py)."""
+
+    backdrop_kind = "profile"
+
+    def paintEvent(self, _event) -> None:
+        from PySide6.QtGui import QColor, QPainter
+
+        p = QPainter(self)
+        p.fillRect(self.rect(), QColor(theme.BG))
+        decor.paint_backdrop(p, self.width(), self.height(), self.backdrop_kind)
+
+
+class SwapTab(_BackdropMixin, QWidget):
+    backdrop_kind = "swap"
+
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
         lay = QVBoxLayout(self)
@@ -749,7 +770,7 @@ class SwapTab(QWidget):
         disc.setPixmap(icons.pixmap("swap", 40, theme.BG, 2.0))
         disc.setAlignment(Qt.AlignmentFlag.AlignCenter)
         disc.setFixedSize(84, 84)
-        disc.setStyleSheet(f"background: {theme.TEXT}; border-radius: 42px;")
+        disc.setStyleSheet(f"background: {theme.ACCENT}; border-radius: 42px;")
         lay.addWidget(disc, 0, Qt.AlignmentFlag.AlignHCenter)
         title = label("Swap", "title")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -776,13 +797,15 @@ class SwapTab(QWidget):
 # ==========================================================================
 # Tab Profil
 # ==========================================================================
-class ProfileTab(QWidget):
+class ProfileTab(_BackdropMixin, QWidget):
+    backdrop_kind = "profile"
     renameRequested = Signal()
     viewSecretRequested = Signal()
     deleteRequested = Signal()
     lockRequested = Signal()
     avatarRequested = Signal()
     removeAvatarRequested = Signal()
+    decorToggled = Signal()
 
     def __init__(self, vault: Vault, avatar_store: AvatarStore | None = None, parent: QWidget | None = None):
         super().__init__(parent)
@@ -840,6 +863,7 @@ class ProfileTab(QWidget):
         self.rename_btn = button("Ganti nama wallet", "menuRow")
         self.secret_btn = button("Lihat seed phrase", "menuRow")
         self.delete_btn = button("Hapus wallet", "menuRowDanger")
+        self.decor_btn = button("Hiasan latar: hidup", "menuRow")
         self.lock_btn = button("Kunci aplikasi sekarang", "menuRow")
         self.photo_btn.clicked.connect(self.avatarRequested)
         self.remove_photo_btn.clicked.connect(self.removeAvatarRequested)
@@ -847,7 +871,8 @@ class ProfileTab(QWidget):
         self.secret_btn.clicked.connect(self.viewSecretRequested)
         self.delete_btn.clicked.connect(self.deleteRequested)
         self.lock_btn.clicked.connect(self.lockRequested)
-        for b in (self.photo_btn, self.remove_photo_btn, self.rename_btn, self.secret_btn, self.delete_btn):
+        self.decor_btn.clicked.connect(self.decorToggled)
+        for b in (self.photo_btn, self.remove_photo_btn, self.rename_btn, self.secret_btn, self.decor_btn, self.delete_btn):
             root.addWidget(b)
         root.addWidget(divider())
         root.addWidget(self.lock_btn)
@@ -863,6 +888,9 @@ class ProfileTab(QWidget):
         row.addStretch(1)
         row.addWidget(value)
         return row
+
+    def set_decor_state(self, on: bool) -> None:
+        self.decor_btn.setText("Hiasan latar: hidup" if on else "Hiasan latar: mati")
 
     def refresh(self) -> None:
         self._wallet = self.vault.get_active_wallet()
@@ -933,6 +961,10 @@ class HomePage(QWidget):
     def refresh(self) -> None:
         self.wallet_tab.refresh()
         self.profile_tab.refresh()
+
+    def repaint_decor(self) -> None:
+        for t in (self.wallet_tab, self.swap_tab, self.profile_tab):
+            t.update()
 
     def show_tab(self, index: int) -> None:
         self._nav_group.button(index).setChecked(True)
