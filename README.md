@@ -15,7 +15,7 @@ python main.py
 
 Tes: `python -m pytest -q`. Data aplikasi: `%APPDATA%\PyWallet\` (database `pywallet.db` + folder `avatars`).
 
-## Fitur saat ini (v0.3.0)
+## Fitur saat ini (v0.3.4)
 
 | Fitur | Keterangan |
 |---|---|
@@ -31,7 +31,8 @@ Tes: `python -m pytest -q`. Data aplikasi: `%APPDATA%\PyWallet\` (database `pywa
 | Terima | Alamat + QR code |
 | Halaman login | Font Poppins (SIL OFL 1.1, lihat `pywallet/assets/fonts/OFL.txt`), latar bercahaya, logo |
 | **Tema baru** | Palet abu-abu gelap, teal, biru-teal tua, dan abu pucat; motif kucing/pita/bintang gambar sendiri (bukan gambar karakter mana pun) |
-| **Hiasan latar** | Pita besar, sketsa kucing, dan bintang kecil beropacity rendah di latar; telinga kucing hanya di tombol Kirim/Terima/Trade dan ikon aplikasi. Bisa dimatikan dari Profil (pilihan diingat) |
+| **Animasi geser** | Berpindah Wallet/Swap/Profil menggeser halaman (280 ms); klik beruntun tidak macet |
+| **Hiasan latar** | Pita besar, sketsa kucing, dan bintang kecil beropacity rendah di latar; Telinga kucing kecil gaya coretan pensil hanya di tombol Kirim/Terima/Trade (dan ikon aplikasi). Bisa dimatikan dari Profil (pilihan diingat) |
 
 Belum ada: Kirim dan Trade (menampilkan pesan "akan hadir"), serta daftar token mainnet yang diperluas.
 
@@ -46,6 +47,11 @@ menampilkan ETH native. Tes jalur yang diperluas tetap dijalankan.
 
 Warna ada di `pywallet/ui/theme.py` (satu tempat), motif di `pywallet/ui/decor.py`. Semua motif digambar dengan
 kode (QPainter), tanpa file gambar. Untuk menonaktifkannya secara bawaan, ubah `ENABLED` di `decor.py`.
+
+## Dokumentasi
+
+Pemula? Mulai dari **`docs/PANDUAN.md`**: peta kode, contoh alur lengkap (ganti foto profil), cara kerja saldo/harga,
+dan penjelasan bagaimana Kirim/Swap nanti berinteraksi dengan blockchain.
 
 ## Keamanan
 
