@@ -111,6 +111,50 @@ def draw_ears_on_circle(p: QPainter, rect: QRectF, size: float, color: str, alph
         draw_ear(p, ex, ey, size, sign * spread * 0.85, color, alpha, fill, fill_alpha)
 
 
+def _stroke(p: QPainter, path: QPainterPath, color: str, alpha: float, width: float, scale: float) -> None:
+    p.setBrush(Qt.BrushStyle.NoBrush)
+    p.setPen(_pen(_c(color, alpha), width, scale))
+    p.drawPath(path)
+
+
+def draw_doodle_ear(p: QPainter, x: float, y: float, size: float, rot: float, color: str, alpha: float) -> None:
+    """Telinga gaya coretan pensil: dua goresan longgar yang tidak persis menyatu + arsiran tipis di dalam.
+
+    Tidak diisi warna, jadi hanya garisnya yang terlihat (cocok mengintip dari balik tombol)."""
+    s = size / 20.0
+    with _Xf(p, x, y, s, rot):
+        a = QPainterPath()                       # goresan pertama, melewati pangkal sedikit
+        a.moveTo(-11.5, 3)
+        a.quadTo(-12.5, -12, -2.2, -23.5)
+        a.quadTo(7.5, -15.5, 10.5, 1.5)
+        b = QPainterPath()                       # goresan kedua, agak miring dan tidak rapi
+        b.moveTo(-8.5, -2.5)
+        b.quadTo(-10.5, -12.5, -0.8, -21)
+        b.quadTo(7, -13, 11.5, 3.5)
+        c = QPainterPath()                       # garis lengkung kecil di ujung telinga
+        c.moveTo(-3.5, -22.5)
+        c.quadTo(-1.5, -25, 1.5, -22)
+        _stroke(p, a, color, alpha, 1.2, s)
+        _stroke(p, b, color, alpha * 0.6, 1.0, s)
+        _stroke(p, c, color, alpha * 0.5, 0.9, s)
+        for i, (x0, y0, x1, y1) in enumerate(((-6.5, -2, -3.6, -9.5), (-3.5, -1.5, 0, -11), (-0.5, -1, 3.2, -9.5))):
+            h = QPainterPath()                   # arsiran miring
+            h.moveTo(x0, y0)
+            h.lineTo(x1, y1)
+            _stroke(p, h, color, alpha * (0.55 - 0.08 * i), 0.8, s)
+
+
+def draw_doodle_ears_on_circle(p: QPainter, rect: QRectF, size: float, color: str, alpha: float,
+                               spread: float = 40.0) -> None:
+    """Sepasang telinga coretan di tepi atas bulatan `rect` (kiri-kanan dimiringkan ke luar)."""
+    cx, r = rect.center().x(), rect.width() / 2
+    th = math.radians(spread)
+    for sign in (-1, 1):
+        ex = cx + sign * r * math.sin(th)
+        ey = rect.top() + r - r * math.cos(th) + size * 0.1
+        draw_doodle_ear(p, ex, ey, size, sign * spread * 0.85, color, alpha)
+
+
 def draw_ear_pair(p: QPainter, cx: float, base_y: float, size: float, gap: float, color: str, alpha: float,
                   fill: str | None = None, fill_alpha: float = 0.0) -> None:
     """Sepasang telinga berdampingan di atas tepi datar (mengintip dari balik kartu)."""
@@ -345,6 +389,6 @@ def paint_backdrop(p: QPainter, w: float, h: float, kind: str) -> None:
         draw_cat(p, w - 118, h - 96 * 1.2 - 56, 96, theme.TEXT, 0.14, full=True)
         _scatter(p, w, h, "profile", 0.28)
     elif kind == "swap":
-        draw_bow(p, w * 0.5, h * 0.74, w * 0.86, theme.ACCENT_DEEP, 0.24, theme.ACCENT, 0.15, rot=3)
+        draw_bow(p, w * 0.36, h * 0.70, w * 0.78, theme.ACCENT_DEEP, 0.24, theme.ACCENT, 0.15, rot=3)
         _scatter(p, w, h, "swap", 0.28)
     p.restore()
