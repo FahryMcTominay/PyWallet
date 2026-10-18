@@ -115,23 +115,29 @@ def dot_icon(color: str | QColor, size: int = 10, dpr: float = 2.0) -> QIcon:
 
 
 def app_icon() -> QIcon:
-    """Ikon aplikasi: dompet beige pada kotak biru tua."""
-    from . import theme
+    """Ikon aplikasi: dompet pada kotak biru-teal, dengan sepasang telinga kucing kecil di atasnya."""
+    from . import decor, theme
 
     size = 128
     pm = QPixmap(size, size)
     pm.fill(Qt.GlobalColor.transparent)
     p = QPainter(pm)
     p.setRenderHint(QPainter.RenderHint.Antialiasing)
+    decor.draw_ear_pair(p, size / 2, 40, 30, 62, theme.ACCENT, 1.0, fill=theme.SURFACE, fill_alpha=1.0)
     p.setPen(Qt.PenStyle.NoPen)
     p.setBrush(QColor(theme.SURFACE))
-    p.drawRoundedRect(QRectF(0, 0, size, size), 28, 28)
+    p.drawRoundedRect(QRectF(6, 26, size - 12, size - 32), 28, 28)
+    p.setPen(QPen(QColor(theme.ACCENT), 3))
+    p.setBrush(Qt.BrushStyle.NoBrush)
+    p.drawRoundedRect(QRectF(7.5, 27.5, size - 15, size - 35), 27, 27)
+    p.save()
+    p.translate(0, 12)
     p.scale(size / 32, size / 32)
-    p.translate(4, 4)
-    p.scale(1.0, 1.0)
-    pen = QPen(QColor(theme.TEXT), 1.6, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
+    p.translate(4, 3)
+    pen = QPen(QColor(theme.TEXT_STRONG), 1.6, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
     p.setPen(pen)
     p.setBrush(Qt.BrushStyle.NoBrush)
     draw_icon(p, "wallet")
+    p.restore()
     p.end()
     return QIcon(pm)

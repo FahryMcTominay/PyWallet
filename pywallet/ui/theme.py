@@ -1,23 +1,42 @@
 """Palette dan stylesheet (QSS) PyWallet.
 
-Empat warna dasar dari palette pengguna; warna fungsional (bahaya/sukses) dan
-turunan teks ditambahkan hanya untuk keterbacaan.
+Tema bernuansa kucing dengan palette yang diambil dari gambar referensi pengguna:
+  abu-abu gelap (baju)       -> BG
+  biru tua kehijauan (pita)  -> SURFACE / ACCENT_DEEP
+  teal (pita utama)          -> ACCENT
+  abu-abu pucat (rambut)     -> TEXT
+Warna lain (garis halus, bahaya, sukses, bintang) hanya pelengkap agar keterbacaan terjaga.
 """
 from __future__ import annotations
 
-# Palette utama
-BG = "#1B3C53"        # latar utama
-SURFACE = "#234C6A"   # kartu, panel
-ACCENT = "#456882"    # tombol sekunder, garis, elemen aktif
-TEXT = "#D2C1B6"      # teks dan tombol utama
+# --- Palette inti -------------------------------------------------------------
+BG = "#1D2124"            # latar utama: abu-abu gelap
+SURFACE = "#10414E"       # kartu, panel: biru tua kehijauan (gelap)
+ACCENT = "#43B8C9"        # aksen utama & tombol utama: teal
+ACCENT_DEEP = "#02596C"   # biru tua kehijauan pekat (gradasi kartu, pita dekoratif)
+TEXT = "#DBD0CC"          # teks: abu-abu pucat hangat
 
-# Turunan / fungsional
-TEXT_STRONG = "#F5EEE9"
-MUTED = "rgba(210, 193, 182, 150)"
-MUTED_HEX = "#9FA9AE"
-DANGER = "#F09A8A"
-SUCCESS = "#8FD3B6"
-TEXT_HOVER = "#E2D5CC"
+# --- Turunan -----------------------------------------------------------------------
+SURFACE_HI = "#185565"    # hover pada permukaan
+LINE = "#2C6A78"          # garis & bingkai halus
+TEXT_STRONG = "#F6F1EE"
+ACCENT_HOVER = "#5FCBDB"
+ACCENT_PRESSED = "#2E9EAF"
+DISABLED_BG = "#3A4044"
+DANGER = "#F08C7C"
+SUCCESS = "#86DDA0"
+STAR = "#C47A55"          # tembaga hangat, khusus motif bintang kecil
+MUTED_HEX = "#9AA6A8"
+
+
+def rgba(hex_color: str, alpha: int) -> str:
+    """'#RRGGBB' + alpha 0..255 -> string rgba() untuk QSS."""
+    h = hex_color.lstrip("#")
+    r, g, b = (int(h[i : i + 2], 16) for i in (0, 2, 4))
+    return f"rgba({r}, {g}, {b}, {alpha})"
+
+
+MUTED = rgba(TEXT, 190)
 
 FONT_STACK = '"Segoe UI", "Inter", "Noto Sans", "DejaVu Sans", sans-serif'
 
@@ -40,38 +59,39 @@ QLabel#small    {{ color: {MUTED}; font-size: 12px; }}
 QLabel#error    {{ color: {DANGER}; font-size: 13px; }}
 QLabel#balance  {{ font-size: 40px; font-weight: 700; color: {TEXT_STRONG}; }}
 QLabel#mono     {{ font-family: "Cascadia Mono", "Consolas", "DejaVu Sans Mono", monospace; }}
-QLabel#chip     {{ background: {SURFACE}; border: 1px solid {ACCENT}; border-radius: 12px;
+QLabel#chip     {{ background: {SURFACE}; border: 1px solid {LINE}; border-radius: 12px;
                    padding: 4px 10px; font-size: 12px; color: {TEXT_STRONG}; }}
-QLabel#warnbox  {{ background: rgba(240, 154, 138, 36); border: 1px solid {DANGER};
+QLabel#warnbox  {{ background: {rgba(DANGER, 36)}; border: 1px solid {DANGER};
                    border-radius: 12px; padding: 12px; color: {TEXT_STRONG}; }}
-QLabel#infobox  {{ background: {SURFACE}; border: 1px solid {ACCENT}; border-radius: 12px;
+QLabel#infobox  {{ background: {SURFACE}; border: 1px solid {LINE}; border-radius: 12px;
                    padding: 12px; }}
-QLabel#word     {{ background: {SURFACE}; border: 1px solid {ACCENT}; border-radius: 10px;
+QLabel#word     {{ background: {SURFACE}; border: 1px solid {LINE}; border-radius: 10px;
                    padding: 9px 10px; color: {TEXT_STRONG}; font-weight: 600; }}
-QLabel#secret   {{ background: {SURFACE}; border: 1px solid {ACCENT}; border-radius: 12px;
+QLabel#secret   {{ background: {SURFACE}; border: 1px solid {LINE}; border-radius: 12px;
                    padding: 14px; color: {TEXT_STRONG};
                    font-family: "Cascadia Mono", "Consolas", "DejaVu Sans Mono", monospace; }}
 
 QFrame#card {{ background: {SURFACE}; border-radius: 16px; }}
-QFrame#divider {{ background: {ACCENT}; max-height: 1px; min-height: 1px; }}
-QFrame#navbar {{ background: {SURFACE}; border-top: 1px solid {ACCENT}; }}
+QFrame#divider {{ background: {LINE}; max-height: 1px; min-height: 1px; }}
+QFrame#navbar {{ background: {SURFACE}; border-top: 1px solid {LINE}; }}
 
 QPushButton {{
-    background: {SURFACE}; border: 1px solid {ACCENT}; border-radius: 12px;
+    background: {SURFACE}; border: 1px solid {LINE}; border-radius: 12px;
     padding: 11px 18px; color: {TEXT_STRONG};
 }}
-QPushButton:hover {{ background: {ACCENT}; }}
+QPushButton:hover {{ background: {SURFACE_HI}; }}
 QPushButton:pressed {{ background: {BG}; }}
 QPushButton:disabled {{ color: {MUTED}; background: {SURFACE}; border-color: {SURFACE}; }}
 QPushButton#primary {{
-    background: {TEXT}; color: {BG}; border: none; font-weight: 700;
+    background: {ACCENT}; color: {BG}; border: none; font-weight: 700;
 }}
-QPushButton#primary:hover {{ background: {TEXT_HOVER}; }}
-QPushButton#primary:disabled {{ background: {ACCENT}; color: {MUTED}; }}
+QPushButton#primary:hover {{ background: {ACCENT_HOVER}; }}
+QPushButton#primary:pressed {{ background: {ACCENT_PRESSED}; }}
+QPushButton#primary:disabled {{ background: {DISABLED_BG}; color: {MUTED}; }}
 QPushButton#danger {{ color: {DANGER}; border-color: {DANGER}; background: transparent; }}
-QPushButton#danger:hover {{ background: rgba(240, 154, 138, 40); }}
+QPushButton#danger:hover {{ background: {rgba(DANGER, 40)}; }}
 QPushButton#dangerSolid {{ background: {DANGER}; color: {BG}; border: none; font-weight: 700; }}
-QPushButton#dangerSolid:disabled {{ background: {ACCENT}; color: {MUTED}; }}
+QPushButton#dangerSolid:disabled {{ background: {DISABLED_BG}; color: {MUTED}; }}
 QPushButton#flat {{ background: transparent; border: none; padding: 6px 8px; }}
 QPushButton#flat:hover {{ background: {SURFACE}; }}
 QPushButton#link {{ background: transparent; border: none; color: {TEXT}; text-decoration: underline;
@@ -79,45 +99,45 @@ QPushButton#link {{ background: transparent; border: none; color: {TEXT}; text-d
 QPushButton#menuRow {{ text-align: left; padding: 14px 16px; border-radius: 14px; }}
 QPushButton#menuRowDanger {{ text-align: left; padding: 14px 16px; border-radius: 14px;
                              color: {DANGER}; border-color: {SURFACE}; }}
-QPushButton#menuRowDanger:hover {{ background: rgba(240, 154, 138, 40); }}
-QPushButton#pill {{ border-radius: 12px; padding: 4px 12px; font-size: 12px; background: rgba(27, 60, 83, 110);
-                    border: 1px solid rgba(210, 193, 182, 70); color: {TEXT_STRONG}; }}
-QPushButton#pill:hover {{ background: rgba(27, 60, 83, 190); }}
-QPushButton#pill:checked {{ background: {TEXT}; color: {BG}; border-color: {TEXT}; font-weight: 700; }}
+QPushButton#menuRowDanger:hover {{ background: {rgba(DANGER, 40)}; }}
+QPushButton#pill {{ border-radius: 12px; padding: 4px 12px; font-size: 12px; background: {rgba(BG, 120)};
+                    border: 1px solid {rgba(TEXT, 70)}; color: {TEXT_STRONG}; }}
+QPushButton#pill:hover {{ background: {rgba(BG, 200)}; }}
+QPushButton#pill:checked {{ background: {ACCENT}; color: {BG}; border-color: {ACCENT}; font-weight: 700; }}
 QPushButton#modeChip {{ border-radius: 15px; padding: 6px 12px 6px 10px; font-size: 12px; background: {SURFACE};
-                        border: 1px solid {ACCENT}; color: {TEXT_STRONG}; }}
-QPushButton#modeChip:hover {{ background: {ACCENT}; }}
+                        border: 1px solid {LINE}; color: {TEXT_STRONG}; }}
+QPushButton#modeChip:hover {{ background: {SURFACE_HI}; }}
 QPushButton#segment {{ border-radius: 10px; padding: 9px 14px; background: transparent;
-                       border: 1px solid {ACCENT}; }}
-QPushButton#segment:checked {{ background: {TEXT}; color: {BG}; border-color: {TEXT}; font-weight: 700; }}
+                       border: 1px solid {LINE}; }}
+QPushButton#segment:checked {{ background: {ACCENT}; color: {BG}; border-color: {ACCENT}; font-weight: 700; }}
 
 QToolButton {{ background: transparent; border: none; border-radius: 10px; padding: 6px; }}
 QToolButton:hover {{ background: {SURFACE}; }}
 
 QLineEdit, QPlainTextEdit {{
-    background: {BG}; border: 1px solid {ACCENT}; border-radius: 10px;
+    background: {BG}; border: 1px solid {LINE}; border-radius: 10px;
     padding: 10px 12px; color: {TEXT_STRONG};
-    selection-background-color: {ACCENT}; selection-color: {TEXT_STRONG};
+    selection-background-color: {ACCENT_DEEP}; selection-color: {TEXT_STRONG};
 }}
-QLineEdit:focus, QPlainTextEdit:focus {{ border: 1px solid {TEXT}; }}
+QLineEdit:focus, QPlainTextEdit:focus {{ border: 1px solid {ACCENT}; }}
 QLineEdit:disabled {{ color: {MUTED}; }}
 
 QCheckBox {{ spacing: 10px; color: {TEXT}; }}
 QCheckBox::indicator {{ width: 18px; height: 18px; border-radius: 5px;
-                        border: 1px solid {ACCENT}; background: {BG}; }}
-QCheckBox::indicator:checked {{ background: {TEXT}; border-color: {TEXT}; }}
+                        border: 1px solid {LINE}; background: {BG}; }}
+QCheckBox::indicator:checked {{ background: {ACCENT}; border-color: {ACCENT}; }}
 
-QMenu {{ background: {SURFACE}; border: 1px solid {ACCENT}; border-radius: 10px; padding: 6px; }}
+QMenu {{ background: {SURFACE}; border: 1px solid {LINE}; border-radius: 10px; padding: 6px; }}
 QMenu::item {{ padding: 9px 22px 9px 14px; border-radius: 6px; color: {TEXT_STRONG}; }}
-QMenu::item:selected {{ background: {ACCENT}; }}
-QMenu::separator {{ height: 1px; background: {ACCENT}; margin: 6px 8px; }}
+QMenu::item:selected {{ background: {SURFACE_HI}; }}
+QMenu::separator {{ height: 1px; background: {LINE}; margin: 6px 8px; }}
 
-QToolTip {{ background: {SURFACE}; color: {TEXT_STRONG}; border: 1px solid {ACCENT}; padding: 5px 8px; }}
+QToolTip {{ background: {SURFACE}; color: {TEXT_STRONG}; border: 1px solid {LINE}; padding: 5px 8px; }}
 
 QScrollArea {{ background: transparent; border: none; }}
 QScrollArea > QWidget > QWidget {{ background: transparent; }}
 QScrollBar:vertical {{ background: transparent; width: 8px; margin: 2px; }}
-QScrollBar::handle:vertical {{ background: {ACCENT}; border-radius: 4px; min-height: 30px; }}
+QScrollBar::handle:vertical {{ background: {LINE}; border-radius: 4px; min-height: 30px; }}
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
 
 QMessageBox {{ background: {BG}; }}
