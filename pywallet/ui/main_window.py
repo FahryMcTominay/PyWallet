@@ -28,6 +28,7 @@ from .dialogs import (
     SecretDialog,
 )
 from .pages import EmptyPage, HomePage, SetupPage, UnlockPage
+from .token_dialogs import AddTokenDialog, TokenDetailDialog
 
 PAGE_SETUP, PAGE_UNLOCK, PAGE_EMPTY, PAGE_HOME = range(4)
 
@@ -82,6 +83,8 @@ class MainWindow(QMainWindow):
         wt.importRequested.connect(self.import_wallet)
         wt.receiveRequested.connect(self.receive)
         wt.comingSoon.connect(self._coming_soon)
+        wt.addTokenRequested.connect(self.add_token)
+        wt.tokenRequested.connect(self.show_token)
 
         pt = self.home.profile_tab
         pt.renameRequested.connect(self.rename_wallet)
@@ -221,6 +224,26 @@ class MainWindow(QMainWindow):
         self.home.refresh()
 
     # ------------------------------------------------------------------
+    # ------------------------------------------------------------------
+    # Token
+    # ------------------------------------------------------------------
+    def add_token(self) -> None:
+        wt = self.home.wallet_tab
+        dlg = AddTokenDialog(self.vault, wt.service, wt.mode, self)
+        dlg.run_in_thread = wt.run_in_thread
+        accepted = dlg.exec() and dlg.added is not None
+        dlg.deleteLater()                    # dialog sekali pakai: lepaskan setelah ditutup
+        if accepted:
+            wt.reload_tokens()
+
+    def show_token(self, row) -> None:
+        dlg = TokenDetailDialog(row, self)
+        accepted = dlg.exec() and dlg.removed
+        dlg.deleteLater()
+        if accepted:
+            self.vault.remove_custom_token(row.token.network, row.token.address)
+            self.home.wallet_tab.reload_tokens()
+
     def toggle_decor(self) -> None:
         on = not decor.ENABLED
         decor.set_enabled(on)

@@ -245,13 +245,19 @@ class EmptyPage(LoginPage):
 # Baris token
 # ==========================================================================
 class TokenRow(Card):
+    clicked = Signal(object)   # memancarkan AssetRow yang diklik
+
     def __init__(self, row: AssetRow, snap: Snapshot | None, unit: str, parent: QWidget | None = None):
         super().__init__(parent)
+        self.row = row
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setToolTip("Lihat detail dan contract address")
         t = row.token
         net = NETWORKS[t.network]
         dim = not row.has_balance
         strong = "rgba(245, 238, 233, 150)" if dim else theme.TEXT_STRONG
 
+        self.setMinimumHeight(66)   # tinggi tetap agar daftar panjang bisa di-scroll, bukan menyempit
         lay = QHBoxLayout(self)
         lay.setContentsMargins(14, 11, 14, 11)
         lay.setSpacing(12)
@@ -269,7 +275,7 @@ class TokenRow(Card):
                                  theme.SUCCESS if up else theme.DANGER, 11, 600))
         top.addStretch(1)
         left.addLayout(top)
-        sub = net.name
+        sub = net.name + (" · Kustom" if t.custom else "")
         if snap is not None and not fiat:
             sub += " · Testnet"
         elif fiat and row.price_usd is not None:
@@ -302,6 +308,11 @@ class TokenRow(Card):
         right.addWidget(v)
         lay.addLayout(right)
 
+    def mousePressEvent(self, event) -> None:
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.clicked.emit(self.row)
+        super().mousePressEvent(event)
+
 
 # ==========================================================================
 # Tab Wallet (lobi)
@@ -311,6 +322,8 @@ class WalletTab(QWidget):
     createRequested = Signal()
     importRequested = Signal()
     receiveRequested = Signal()
+    addTokenRequested = Signal()
+    tokenRequested = Signal(object)    # AssetRow yang diklik
     comingSoon = Signal(str)
     _loaded = Signal(int, object)
 
@@ -490,6 +503,11 @@ class WalletTab(QWidget):
         header.addStretch(1)
         self.count_lbl = label("", "small")
         header.addWidget(self.count_lbl)
+        header.addSpacing(8)
+        self.add_token_btn = button("＋ Token", "pill")
+        self.add_token_btn.setToolTip("Tambah token lewat contract address")
+        self.add_token_btn.clicked.connect(self.addTokenRequested)
+        header.addWidget(self.add_token_btn)
         root.addSpacing(4)
         root.addLayout(header)
         underline = QFrame()
@@ -553,13 +571,14 @@ class WalletTab(QWidget):
             return
         self._request_id += 1
         rid, address, mode = self._request_id, wallet.address, self.mode
+        custom = self.vault.list_custom_tokens()   # dibaca di thread utama (SQLite), lalu dipakai di thread kerja
         self._loading = True
         self.status.setText("Memuat…")
         self.status.setStyleSheet(f"color: {theme.MUTED}; font-size: 12px;")
 
         def work() -> None:
             try:
-                result = self.service.load(address, mode)
+                result = self.service.load(address, mode, custom)
             except Exception as exc:  # noqa: BLE001 - apa pun yang gagal tidak boleh menjatuhkan UI
                 result = exc
             try:
@@ -690,7 +709,8 @@ class WalletTab(QWidget):
         if snap is not None and not self._loading:
             if snap.errors:
                 self.status.setText(" · ".join(snap.errors))
-                self.status.setToolTip("Coba muat ulang. Endpoint RPC/harga publik kadang membatasi permintaan.")
+                hint = "Coba muat ulang. Endpoint RPC/harga publik kadang membatasi permintaan."
+                self.status.setToolTip("\n".join([hint, *snap.details]))
                 self.status.setStyleSheet(f"color: {theme.DANGER}; font-size: 12px;")
             else:
                 self.status.setText("Diperbarui " + time.strftime("%H:%M", time.localtime(snap.fetched_at)))
@@ -708,20 +728,31 @@ class WalletTab(QWidget):
                 w.setParent(None)      # langsung lepas agar tidak tampil ganda sebelum benar-benar dihapus
                 w.deleteLater()
         rows = snap.rows if snap else sort_assets(
-            [AssetRow(t, None, None, None) for t in tokens_for_mode(self.mode)]
+            [AssetRow(t, None, None, None) for t in tokens_for_mode(self.mode, self.vault.list_custom_tokens())]
         )
         held = [r for r in rows if r.has_balance]
         rest = [r for r in rows if not r.has_balance]
         self.count_lbl.setText(f"{len(held)} dimiliki · {len(rows)} aset" if snap else f"{len(rows)} aset")
         for r in held:
-            self.list_lay.addWidget(TokenRow(r, snap, self.unit))
+            self.list_lay.addWidget(self._token_row(r, snap))
         if rest:
             if snap is not None and len(rows) > 1:
                 cap = "Token populer lainnya" if held else "Token populer"
                 self.list_lay.addWidget(styled(label(cap), theme.MUTED, 12, 600))
             for r in rest:
-                self.list_lay.addWidget(TokenRow(r, snap, self.unit))
+                self.list_lay.addWidget(self._token_row(r, snap))
         self.list_lay.addStretch(1)
+
+    def _token_row(self, r: AssetRow, snap: Snapshot | None) -> TokenRow:
+        row = TokenRow(r, snap, self.unit)
+        row.clicked.connect(self.tokenRequested)
+        return row
+
+    def reload_tokens(self) -> None:
+        """Dipanggil setelah daftar token kustom berubah: muat ulang daftar dan saldo."""
+        self.snapshot = None
+        self._render()
+        self.refresh_data()
 
     def _copy_address(self) -> None:
         if self._wallet:
