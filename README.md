@@ -15,7 +15,7 @@ python main.py
 
 Tes: `python -m pytest -q`. Data aplikasi: `%APPDATA%\PyWallet\` (database `pywallet.db` + folder `avatars`).
 
-## Fitur saat ini (v0.3.4)
+## Fitur saat ini (v0.5.0)
 
 | Fitur | Keterangan |
 |---|---|
@@ -34,14 +34,27 @@ Tes: `python -m pytest -q`. Data aplikasi: `%APPDATA%\PyWallet\` (database `pywa
 | **Animasi geser** | Berpindah Wallet/Swap/Profil menggeser halaman (280 ms); klik beruntun tidak macet |
 | **Hiasan latar** | Pita besar, sketsa kucing, dan bintang kecil beropacity rendah di latar; Telinga kucing kecil gaya coretan pensil hanya di tombol Kirim/Terima/Trade (dan ikon aplikasi). Bisa dimatikan dari Profil (pilihan diingat) |
 
-Belum ada: Kirim dan Trade (menampilkan pesan "akan hadir"), serta daftar token mainnet yang diperluas.
+Belum ada: Kirim dan Trade (menampilkan pesan "akan hadir").
 
-### Daftar token mainnet yang diperluas (sengaja dimatikan)
+### Tambah token lewat contract address
 
-Kode untuk menampilkan ETH di Base, USDT/USDC di Ethereum, dan koin populer lain (diurutkan dari aset terbesar,
-saldo 0 menyusul berurutan abjad) sudah ada di `pywallet/tokens.py` dan `pywallet/portfolio.py`, tetapi dimatikan
-lewat `EXTENDED_TOKEN_LIST = False` di `pywallet/config.py` sampai sesi khususnya. Selama False, lobi hanya
-menampilkan ETH native. Tes jalur yang diperluas tetap dijalankan.
+Tombol **＋ Token** di lobi: pilih jaringan (Ethereum/Base di mainnet, Sepolia di testnet), tempel contract address,
+lalu **Periksa**. Nama, simbol, dan desimal dibaca langsung dari blockchain (`rpc.fetch_token_info`). Sebelum
+menambahkan kamu wajib mencentang bahwa alamat sudah dicocokkan dengan sumber resmi; jika simbolnya sama dengan token
+bawaan tetapi alamatnya beda, muncul peringatan token palsu. Token kustom tersimpan di database lokal (tabel
+`custom_tokens`, skema v3), berlaku untuk semua wallet, bertanda "Kustom", dan tidak punya harga (agar token palsu
+tidak bisa meminjam harga token asli).
+
+Klik baris token mana pun untuk melihat **detail**: saldo, jaringan, **contract address** (salin / buka di explorer),
+dan tombol hapus untuk token kustom. ETH dijelaskan sebagai koin native yang memang tidak punya contract address.
+
+### Daftar token mainnet
+
+Mainnet menampilkan 10 aset meskipun saldonya 0: ETH (Ethereum dan Base), USDT, USDC (Ethereum dan Base), DAI,
+WBTC, LINK, UNI, CAKE. Urutan: aset bernilai terbesar di atas, lalu yang lebih kecil, dan saldo 0 menyusul
+berurutan abjad. Daftarnya ada di `pywallet/tokens.py`. Saklar `EXTENDED_TOKEN_LIST` di `pywallet/config.py`
+(False = hanya ETH). Alamat kontrak harus berformat checksum (diperiksa tes); verifikasi alamat ke sumber
+resmi sebelum mengandalkannya untuk dana sungguhan.
 
 ### Tema & motif
 
@@ -84,7 +97,7 @@ tests/                     core, UI (offscreen), lapisan data (jaringan palsu), 
 
 ## Rencana
 
-3. Manajemen token via contract address; daftar token mainnet yang diperluas
+3. ~~Daftar token mainnet yang diperluas dan tambah token via contract address~~ (selesai)
 4. Kirim ETH/token (uji di Sepolia)
 5. Swap lewat kontrak PancakeSwap
 6. Packaging `.exe` dengan PyInstaller

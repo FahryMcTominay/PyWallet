@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 
 APP_NAME = "PyWallet"
-APP_VERSION = "0.3.4"
+APP_VERSION = "0.5.0"
 
 # Jeda tanpa master password: jika aplikasi terakhir aktif < 5 menit lalu,
 # lobi bisa dibuka tanpa password. Aksi sensitif tetap meminta password.
@@ -21,10 +21,9 @@ HEARTBEAT_MS = 30_000           # catat "terakhir aktif" tiap 30 detik saat apli
 
 DEFAULT_DERIVATION_PATH = "m/44'/60'/0'/0/0"
 
-# Daftar token mainnet yang diperluas (ETH di Base, USDT/USDC, dan koin populer lainnya) sengaja
-# DIMATIKAN dulu: fitur ini diminta dikerjakan di sesi tersendiri. Kodenya sudah ada di tokens.py;
-# mengubah nilai ini menjadi True akan mengaktifkannya (tes untuk jalur itu tetap dijalankan).
-EXTENDED_TOKEN_LIST = False
+# Daftar token mainnet yang diperluas (ETH di Base, USDT/USDC, dan koin populer lainnya).
+# Ubah ke False untuk kembali ke tampilan ETH saja (kode dan tesnya tetap ada).
+EXTENDED_TOKEN_LIST = True
 
 
 def data_dir() -> Path:
