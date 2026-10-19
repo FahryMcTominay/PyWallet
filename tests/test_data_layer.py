@@ -366,3 +366,11 @@ def test_service_testnet_ranks_with_reference_prices():
 )
 def test_formatting(fn, value, expected):
     assert fn(value) == expected
+
+
+def test_failed_network_reports_reason_in_details():
+    fake = FakeHttp()
+    install_standard(fake)                      # tanpa handler RPC -> semua permintaan RPC gagal
+    snap = PortfolioService(fake).load(ADDR, "mainnet")
+    assert any("gagal dimuat" in e for e in snap.errors)
+    assert snap.details and all(":" in d for d in snap.details)

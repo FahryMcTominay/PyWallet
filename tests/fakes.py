@@ -92,6 +92,7 @@ def install_standard(fake: FakeHttp, mode: str = "mainnet", **kwargs):
         "USDCUSDT": (1.0, 0.0),
         "LINKUSDT": (15.0, 5.0),
         "UNIUSDT": (8.0, 1.0),
+        "CAKEUSDT": (2.5, 1.5),
         "AAVEUSDT": (200.0, 3.0),
         "SHIBUSDT": (0.00002, -2.0),
         "PEPEUSDT": (0.00001, 4.0),
@@ -103,3 +104,52 @@ def install_standard(fake: FakeHttp, mode: str = "mainnet", **kwargs):
 
 def rpc_urls(network: str):
     return NETWORKS[network].rpc_urls
+
+
+# --------------------------------------------------------------------------
+# Blockchain palsu dengan kontrak token ERC-20 (name / symbol / decimals / balanceOf)
+# --------------------------------------------------------------------------
+def abi_string(text: str) -> str:
+    raw = text.encode()
+    padded = raw + b"\x00" * (-len(raw) % 32)
+    return "0x" + (32).to_bytes(32, "big").hex() + len(raw).to_bytes(32, "big").hex() + padded.hex()
+
+
+def abi_bytes32(text: str) -> str:
+    return "0x" + text.encode().ljust(32, b"\x00").hex()
+
+
+def make_chain(contracts: dict[str, dict], native_wei: int = 0, balances: dict[str, int] | None = None):
+    """contracts: alamat -> {"name", "symbol", "decimals", "bytes32": bool, "broken": bool}.
+    balances: alamat kontrak -> saldo mentah milik siapa pun yang ditanya."""
+    contracts = {k.lower(): v for k, v in contracts.items()}
+    balances = {k.lower(): v for k, v in (balances or {}).items()}
+
+    def one(req: dict) -> dict:
+        method, params = req["method"], req["params"]
+        ok = lambda result: {"jsonrpc": "2.0", "id": req["id"], "result": result}  # noqa: E731
+        fail = lambda msg: {"jsonrpc": "2.0", "id": req["id"], "error": {"code": 3, "message": msg}}  # noqa: E731
+        if method == "eth_getBalance":
+            return ok(hex(native_wei))
+        if method == "eth_getCode":
+            return ok("0x6080604052" if params[0].lower() in contracts else "0x")
+        if method == "eth_call":
+            to, data = params[0]["to"].lower(), params[0]["data"]
+            info = contracts.get(to)
+            if info is None or info.get("broken") and data[:10] != "0x70a08231":
+                return fail("execution reverted")
+            enc = abi_bytes32 if info.get("bytes32") else abi_string
+            if data[:10] == "0x06fdde03":
+                return ok(enc(info["name"]))
+            if data[:10] == "0x95d89b41":
+                return ok(enc(info["symbol"]))
+            if data[:10] == "0x313ce567":
+                return ok(hex(info["decimals"]))
+            if data[:10] == "0x70a08231":
+                return ok(hex(balances.get(to, 0)))
+        return fail("no method")
+
+    def handler(payload):
+        return [one(r) for r in payload] if isinstance(payload, list) else one(payload)
+
+    return handler

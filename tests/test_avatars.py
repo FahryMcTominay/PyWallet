@@ -117,4 +117,5 @@ def test_migration_from_v1_keeps_existing_wallets(tmp_path):
     db = Database(path)
     row = db.conn.execute("SELECT name, avatar FROM wallets").fetchone()
     assert row["name"] == "Lama" and row["avatar"] is None
-    assert db.conn.execute("PRAGMA user_version").fetchone()[0] == 2
+    assert db.conn.execute("PRAGMA user_version").fetchone()[0] == 3     # v1 -> v2 -> v3
+    assert db.conn.execute("SELECT count(*) FROM custom_tokens").fetchone()[0] == 0

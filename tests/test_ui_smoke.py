@@ -1,5 +1,6 @@
 """Smoke test UI (tanpa layar, memakai platform Qt 'offscreen' dan jaringan palsu)."""
 import os
+from decimal import Decimal
 
 import pytest
 
@@ -328,16 +329,25 @@ def test_unit_and_network_switch_render_and_persist(app, ready_vault, make_windo
     assert win2.home.wallet_tab.mode == "mainnet" and win2.home.wallet_tab.unit == "eth"
 
 
-def test_lobby_lists_only_native_eth_while_extended_list_is_off(app, ready_vault, make_window):
+def test_lobby_lists_extended_tokens_sorted_by_holding(app, ready_vault, make_window):
     v = ready_vault
     v.import_mnemonic("A", HARDHAT_MNEMONIC, PW)
-    win = make_window(v)
+    fake = FakeHttp()
+    install_standard(fake)
+    fake.post_handlers[rpc_urls("ethereum")[0]] = make_rpc(2 * 10**18)   # 2 ETH di Ethereum
+    fake.post_handlers[rpc_urls("base")[0]] = make_rpc(10**17)           # 0,1 ETH di Base
+    win = make_window(v, fake)
     win.start()
     win._enter_app()
     wt = win.home.wallet_tab
-    for mode in ("testnet", "mainnet"):
-        wt.set_mode(mode)
-        assert wt.count_lbl.text().endswith("1 aset")
+    wt.set_mode("mainnet")
+    assert wt.count_lbl.text().endswith("10 aset")
+    rows = [(r.token.network, r.token.symbol) for r in wt.snapshot.rows]
+    assert rows[0] == ("ethereum", "ETH") and rows[1] == ("base", "ETH")      # yang terbanyak di atas
+    rest = [sym for _, sym in rows[2:]]
+    assert rest == sorted(rest, key=str.lower)                                # saldo 0 urut abjad
+    wt.set_mode("testnet")
+    assert {r.token.network for r in wt.snapshot.rows} == {"sepolia"}
 
 
 def test_decor_toggle_in_profile_persists(app, ready_vault, make_window):
@@ -382,3 +392,130 @@ def test_tab_switch_slides_and_settles(app, ready_vault, make_window):
     assert tabs.currentIndex() == 0 and tabs.currentWidget().pos().x() == 0
     assert not win.home.profile_tab.isVisible() and not win.home.swap_tab.isVisible()
     win.close()
+
+
+# --------------------------------------------------------------------------
+# Token kustom: dialog tambah, detail, dan daftar di lobi
+# --------------------------------------------------------------------------
+def _token_env(vault):
+    from .test_custom_tokens import FAKE_USDT, MYTOKEN, chain
+    fake = FakeHttp()
+    install_standard(fake)
+    for net in ("ethereum", "base", "sepolia"):
+        fake.post_handlers[rpc_urls(net)[0]] = chain(balances={MYTOKEN: 5_000_000})
+    return fake, PortfolioService(fake), MYTOKEN, FAKE_USDT
+
+
+def test_add_token_dialog_flow(app, ready_vault):
+    from pywallet.ui.token_dialogs import AddTokenDialog
+
+    v = ready_vault
+    fake, service, mytoken, fake_usdt = _token_env(v)
+    dlg = AddTokenDialog(v, service, "mainnet")
+    dlg.run_in_thread = False
+    assert not dlg.add_btn.isEnabled() and set(dlg.net_buttons) == {"ethereum", "base"}
+
+    dlg.addr_edit.setText("0x123")                           # alamat rusak
+    dlg.check()
+    assert dlg.err.isVisible() is False and "40 karakter" in dlg.err.text()
+
+    dlg.addr_edit.setText(mytoken)
+    dlg.check()
+    assert "TPC" in dlg.preview.text() and "Desimal: 6" in dlg.preview.text()
+    assert not dlg.add_btn.isEnabled()                       # wajib centang pencocokan alamat dulu
+    dlg.confirm.setChecked(True)
+    assert dlg.add_btn.isEnabled()
+    dlg.addr_edit.setText(mytoken.lower())                   # mengubah teks mereset pratinjau (huruf kecil semua tetap sah)
+    assert not dlg.add_btn.isEnabled()
+    dlg.check()
+    dlg.confirm.setChecked(True)
+    dlg._add()
+    assert dlg.added is not None and dlg.added.symbol == "TPC"
+    assert [t.address for t in v.list_custom_tokens()] == [mytoken]
+
+
+def test_add_token_dialog_warns_on_lookalike_symbol_and_duplicates(app, ready_vault):
+    from pywallet.ui.token_dialogs import AddTokenDialog
+
+    v = ready_vault
+    fake, service, mytoken, fake_usdt = _token_env(v)
+    dlg = AddTokenDialog(v, service, "mainnet")
+    dlg.run_in_thread = False
+    dlg.addr_edit.setText(fake_usdt)
+    dlg.check()
+    assert "token palsu" in dlg.warn.text() and dlg.preview.text().startswith("Nama: Tether USD")
+    dlg.addr_edit.setText("0xdAC17F958D2ee523a2206206994597C13D831ec7")      # USDT asli = sudah bawaan
+    dlg.check()
+    assert "sudah ada" in dlg.err.text() and dlg.preview.isHidden()
+    dlg.addr_edit.setText("0x" + "11" * 20)                                    # bukan kontrak
+    dlg.check()
+    assert "Tidak ada kontrak" in dlg.err.text()
+    v.add_custom_token("ethereum", mytoken, "TPC", "Token Percobaan", 6)
+    dlg.addr_edit.setText(mytoken)
+    dlg.check()
+    assert "sudah ada di daftarmu" in dlg.err.text()
+    assert dlg.explorer_url() == f"https://etherscan.io/token/{mytoken}"
+    dlg._set_network("base")
+    dlg.addr_edit.setText(mytoken)
+    assert dlg.explorer_url() == f"https://basescan.org/token/{mytoken}"
+
+
+def test_add_token_dialog_testnet_has_single_network(app, ready_vault):
+    from pywallet.ui.token_dialogs import AddTokenDialog
+
+    fake, service, mytoken, _ = _token_env(ready_vault)
+    dlg = AddTokenDialog(ready_vault, service, "testnet")
+    dlg.run_in_thread = False
+    assert dlg.net_buttons == {}
+    dlg.addr_edit.setText(mytoken)
+    dlg.check()
+    assert "Jaringan: Sepolia" in dlg.preview.text()
+
+
+def test_lobby_shows_custom_token_and_detail_dialog(app, ready_vault, make_window, monkeypatch):
+    from pywallet.portfolio import AssetRow
+    from pywallet.tokens import TOKENS
+    from pywallet.ui.pages import TokenRow
+    from pywallet.ui.token_dialogs import TokenDetailDialog
+
+    v = ready_vault
+    v.import_mnemonic("A", HARDHAT_MNEMONIC, PW)
+    fake, _service, mytoken, _ = _token_env(v)
+    v.add_custom_token("ethereum", mytoken, "TPC", "Token Percobaan", 6)
+    win = make_window(v, fake)
+    win.start()
+    win._enter_app()
+    wt = win.home.wallet_tab
+    wt.set_mode("mainnet")
+    rows = wt.findChildren(TokenRow)
+    assert len(rows) == 11                                           # 10 bawaan + 1 kustom
+    custom = next(r for r in rows if r.row.token.custom)
+    assert custom.row.amount == Decimal("5") and wt.count_lbl.text().endswith("11 aset")
+
+    # MainWindow membuka dialog modal saat baris diklik; di tes, dialog dibuat "langsung ditutup".
+    monkeypatch.setattr("pywallet.ui.token_dialogs.TokenDetailDialog.exec", lambda self: 0)
+    clicked = []
+    wt.tokenRequested.connect(clicked.append)
+    custom.clicked.emit(custom.row)
+    assert clicked and clicked[0].token.address == mytoken
+
+    d = TokenDetailDialog(custom.row)                                # token kustom: alamat + tombol hapus
+    assert d.addr_label.text() == mytoken and d.remove_btn is not None
+    d._ask_remove()
+    assert not d.remove_btn.isVisibleTo(d) and d.confirm_box.isVisibleTo(d)
+    d._cancel_remove()
+    assert d.remove_btn.isVisibleTo(d) and not d.removed
+    d._do_remove()
+    assert d.removed
+
+    usdt = next(r for r in rows if r.row.token.symbol == "USDT")
+    d2 = TokenDetailDialog(usdt.row)                                 # token bawaan: alamat, tanpa tombol hapus
+    assert d2.addr_label.text() == "0xdAC17F958D2ee523a2206206994597C13D831ec7" and d2.remove_btn is None
+
+    eth = AssetRow(TOKENS["ethereum"][0], Decimal(0), 3000.0, None)
+    d3 = TokenDetailDialog(eth)                                      # ETH: penjelasan koin native
+    assert d3.addr_label is None
+
+    v.remove_custom_token("ethereum", mytoken)
+    wt.reload_tokens()
+    assert len(wt.findChildren(TokenRow)) == 10
