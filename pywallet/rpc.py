@@ -1,12 +1,16 @@
 """Klien JSON-RPC EVM: batch + failover antar endpoint, dan pembacaan saldo."""
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any, Sequence
 
 from .httpclient import HttpClient, HttpError
 from .tokens import Token
 
 BALANCE_OF_SELECTOR = "0x70a08231"
+NAME_SELECTOR = "0x06fdde03"       # name()
+SYMBOL_SELECTOR = "0x95d89b41"     # symbol()
+DECIMALS_SELECTOR = "0x313ce567"   # decimals()
 
 
 class RpcError(Exception):
@@ -107,3 +111,76 @@ def fetch_balances(rpc: RpcClient, address: str, tokens: Sequence[Token]) -> dic
         except RpcError as exc:
             out[t.key] = exc
     return out
+
+
+# --------------------------------------------------------------------------
+# Info token dari contract address (nama, simbol, desimal)
+# --------------------------------------------------------------------------
+@dataclass(frozen=True)
+class TokenInfo:
+    address: str
+    name: str
+    symbol: str
+    decimals: int
+
+
+def decode_abi_string(result: Any) -> str:
+    """Terjemahkan hasil eth_call yang berisi string (name/symbol).
+
+    Dua bentuk ada di alam liar: string dinamis standar ABI, dan bytes32 pada token lama (mis. MKR).
+    """
+    if not isinstance(result, str) or not result.startswith("0x"):
+        raise RpcError("Respons tidak valid.")
+    try:
+        data = bytes.fromhex(result[2:])
+    except ValueError as exc:
+        raise RpcError("Respons tidak valid.") from exc
+    if len(data) == 32:                                   # bytes32
+        raw = data.rstrip(b"\x00")
+    elif len(data) >= 64:                                 # string dinamis: [offset][panjang][isi]
+        offset = int.from_bytes(data[:32], "big")
+        if offset + 32 > len(data):
+            raise RpcError("Respons tidak valid.")
+        length = int.from_bytes(data[offset:offset + 32], "big")
+        if offset + 32 + length > len(data):
+            raise RpcError("Respons tidak valid.")
+        raw = data[offset + 32: offset + 32 + length]
+    else:
+        raise RpcError("Respons kosong.")
+    text = raw.decode("utf-8", errors="replace")
+    return "".join(ch for ch in text if ch.isprintable()).strip()
+
+
+def fetch_token_info(rpc: RpcClient, address: str) -> TokenInfo:
+    """Baca info token ERC-20 langsung dari blockchain. `address` harus sudah berformat checksum.
+
+    Lempar RpcError dengan pesan yang aman ditampilkan jika alamat bukan kontrak atau bukan token ERC-20.
+    """
+    code, name_r, symbol_r, dec_r = rpc.batch([
+        ("eth_getCode", [address, "latest"]),
+        ("eth_call", [{"to": address, "data": NAME_SELECTOR}, "latest"]),
+        ("eth_call", [{"to": address, "data": SYMBOL_SELECTOR}, "latest"]),
+        ("eth_call", [{"to": address, "data": DECIMALS_SELECTOR}, "latest"]),
+    ])
+    if isinstance(code, RpcError):
+        raise RpcError("Tidak bisa terhubung ke jaringan. Periksa koneksi internet lalu coba lagi.")
+    if code in (None, "0x", ""):
+        raise RpcError("Tidak ada kontrak di alamat ini pada jaringan yang dipilih. Periksa alamat dan jaringannya.")
+    try:
+        if isinstance(symbol_r, RpcError) or isinstance(dec_r, RpcError):
+            raise RpcError("")
+        symbol = decode_abi_string(symbol_r)
+        decimals = parse_uint(dec_r)
+        name = symbol
+        if not isinstance(name_r, RpcError):
+            try:
+                name = decode_abi_string(name_r) or symbol
+            except RpcError:
+                pass
+    except RpcError as exc:
+        raise RpcError("Kontrak ini tidak terbaca sebagai token ERC-20 (tidak punya symbol/decimals yang valid).") from exc
+    if not symbol or len(symbol) > 20:
+        raise RpcError("Simbol token tidak valid.")
+    if not 0 <= decimals <= 36:
+        raise RpcError("Jumlah desimal token tidak valid.")
+    return TokenInfo(address, name[:40], symbol, decimals)

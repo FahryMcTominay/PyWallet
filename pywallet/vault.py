@@ -25,6 +25,8 @@ from .config import (
 )
 from .crypto import DecryptionError
 from .db import Database
+from .networks import NETWORKS
+from .tokens import InvalidContractAddress, Token, find_builtin, make_custom_token, normalize_contract_address
 
 SECRET_MNEMONIC = "mnemonic"
 SECRET_PRIVATE_KEY = "private_key"
@@ -290,6 +292,49 @@ class Vault:
         with self.db.conn:
             self.db.conn.execute("UPDATE wallets SET avatar = ? WHERE id = ?", (filename, wallet_id))
         return self.get_wallet(wallet_id)
+
+    # ------------------------------------------------------------------
+    # Token kustom (ditambahkan lewat contract address; berlaku untuk semua wallet)
+    # ------------------------------------------------------------------
+    def list_custom_tokens(self) -> list[Token]:
+        rows = self.db.conn.execute(
+            "SELECT network, address, symbol, name, decimals FROM custom_tokens ORDER BY id"
+        ).fetchall()
+        return [
+            make_custom_token(r["network"], r["address"], r["symbol"], r["name"], r["decimals"])
+            for r in rows
+            if r["network"] in NETWORKS
+        ]
+
+    def add_custom_token(self, network: str, address: str, symbol: str, name: str, decimals: int) -> Token:
+        if network not in NETWORKS:
+            raise VaultError("Jaringan tidak dikenal.")
+        try:
+            address = normalize_contract_address(address)
+        except InvalidContractAddress as exc:
+            raise VaultError(str(exc)) from exc
+        symbol, name = symbol.strip(), name.strip()
+        if not symbol or len(symbol) > 20 or not 0 <= int(decimals) <= 36:
+            raise VaultError("Data token tidak valid.")
+        builtin = find_builtin(network, address)
+        if builtin is not None:
+            raise DuplicateWallet(f"{builtin.symbol} sudah ada di daftar bawaan jaringan {NETWORKS[network].name}.")
+        if self.db.conn.execute(
+            "SELECT 1 FROM custom_tokens WHERE network = ? AND address = ?", (network, address)
+        ).fetchone():
+            raise DuplicateWallet("Token ini sudah ada di daftarmu.")
+        with self.db.conn:
+            self.db.conn.execute(
+                "INSERT INTO custom_tokens (network, address, symbol, name, decimals) VALUES (?, ?, ?, ?, ?)",
+                (network, address, symbol, name or symbol, int(decimals)),
+            )
+        return make_custom_token(network, address, symbol, name or symbol, int(decimals))
+
+    def remove_custom_token(self, network: str, address: str) -> None:
+        with self.db.conn:
+            self.db.conn.execute(
+                "DELETE FROM custom_tokens WHERE network = ? AND address = ?", (network, address)
+            )
 
     # ------------------------------------------------------------------
     # Preferensi tampilan (bukan data sensitif)

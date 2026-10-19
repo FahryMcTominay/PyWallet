@@ -5,12 +5,13 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from decimal import Decimal
+from typing import Sequence
 
 from .formatting import UNIT_ETH, UNIT_IDR, UNIT_USD
 from .httpclient import HttpClient, UrllibClient
 from .networks import MODE_MAINNET, NETWORKS
 from .prices import PriceService, Quote
-from .rpc import RpcClient, RpcError, fetch_balances
+from .rpc import RpcClient, RpcError, fetch_balances, fetch_token_info
 from .tokens import Token, active_networks, tokens_for_mode
 
 ETH_PRICE_SYMBOL = "ETHUSDT"
@@ -62,6 +63,7 @@ class Snapshot:
     eth_change: float | None = None
     eth_spark: list[float] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
+    details: list[str] = field(default_factory=list)   # rincian teknis galat (untuk tooltip)
     fetched_at: float = field(default_factory=time.time)
 
     @property
@@ -135,9 +137,13 @@ class PortfolioService:
         self.prices = PriceService(self.http)
         self._rpc = {k: RpcClient(self.http, n.rpc_urls) for k, n in NETWORKS.items()}
 
-    def load(self, address: str, mode: str) -> Snapshot:
-        tokens = tokens_for_mode(mode)
-        networks = active_networks(mode)
+    def token_info(self, network: str, address: str):
+        """Baca nama/simbol/desimal token dari blockchain (untuk fitur tambah token)."""
+        return fetch_token_info(self._rpc[network], address)
+
+    def load(self, address: str, mode: str, custom_tokens: Sequence[Token] = ()) -> Snapshot:
+        tokens = tokens_for_mode(mode, custom_tokens)
+        networks = active_networks(mode, custom_tokens)
         symbols = {t.price_symbol for t in tokens if t.price_symbol} | {ETH_PRICE_SYMBOL}
 
         with ThreadPoolExecutor(max_workers=len(networks) + 3) as pool:
@@ -161,6 +167,12 @@ class PortfolioService:
         errors: list[str] = []
         failed_networks = {NETWORKS[t.network].name for t in tokens if isinstance(balances.get(t.key), RpcError)}
         errors.extend(f"Saldo {name} gagal dimuat" for name in sorted(failed_networks))
+        details: list[str] = []
+        for net in networks:
+            first = next((balances[t.key] for t in tokens if t.network == net.key
+                          and isinstance(balances.get(t.key), RpcError)), None)
+            if first is not None:
+                details.append(f"{net.name}: {first}")
         if not quotes:
             errors.append("Harga pasar gagal dimuat")
 
@@ -187,4 +199,5 @@ class PortfolioService:
             eth_change=eth_q.change_pct if eth_q else None,
             eth_spark=spark,
             errors=errors,
+            details=details,
         )

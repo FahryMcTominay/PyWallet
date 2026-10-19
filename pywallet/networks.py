@@ -18,6 +18,7 @@ class Network:
     is_testnet: bool
     badge_color: str   # warna lencana kecil di ikon token
     badge_text: str
+    explorer: str = ""   # alamat dasar block explorer (untuk memeriksa token/transaksi)
 
 
 NETWORKS: dict[str, Network] = {
@@ -33,6 +34,7 @@ NETWORKS: dict[str, Network] = {
         is_testnet=False,
         badge_color="#F5EEE9",
         badge_text="",
+        explorer="https://etherscan.io",
     ),
     "base": Network(
         key="base",
@@ -46,6 +48,7 @@ NETWORKS: dict[str, Network] = {
         is_testnet=False,
         badge_color="#2F6BFF",
         badge_text="B",
+        explorer="https://basescan.org",
     ),
     "sepolia": Network(
         key="sepolia",
@@ -59,6 +62,7 @@ NETWORKS: dict[str, Network] = {
         is_testnet=True,
         badge_color="#D9A35B",
         badge_text="S",
+        explorer="https://sepolia.etherscan.io",
     ),
 }
 

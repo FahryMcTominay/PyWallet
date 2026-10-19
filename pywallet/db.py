@@ -10,7 +10,7 @@ import sqlite3
 import sys
 from pathlib import Path
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 
 class Database:
@@ -52,6 +52,25 @@ class Database:
             # v2: foto profil kustom (nama file di folder avatars, bukan path penuh)
             self.conn.execute("ALTER TABLE wallets ADD COLUMN avatar TEXT")
             self.conn.execute("PRAGMA user_version = 2")
+            self.conn.commit()
+
+        if version < 3:
+            # v3: token yang ditambahkan pengguna lewat contract address
+            self.conn.executescript(
+                """
+                CREATE TABLE custom_tokens (
+                    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                    network    TEXT NOT NULL,
+                    address    TEXT NOT NULL,
+                    symbol     TEXT NOT NULL,
+                    name       TEXT NOT NULL,
+                    decimals   INTEGER NOT NULL CHECK (decimals BETWEEN 0 AND 36),
+                    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+                    UNIQUE (network, address)
+                );
+                """
+            )
+            self.conn.execute("PRAGMA user_version = 3")
             self.conn.commit()
 
     # --- pengaturan -------------------------------------------------------
