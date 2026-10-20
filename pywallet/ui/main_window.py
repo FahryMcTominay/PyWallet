@@ -28,6 +28,7 @@ from .dialogs import (
     SecretDialog,
 )
 from .pages import EmptyPage, HomePage, SetupPage, UnlockPage
+from .history_dialog import ApiKeyDialog, HistoryDialog
 from .send_dialog import SendDialog
 from .token_dialogs import AddTokenDialog, TokenDetailDialog
 
@@ -84,6 +85,7 @@ class MainWindow(QMainWindow):
         wt.importRequested.connect(self.import_wallet)
         wt.receiveRequested.connect(self.receive)
         wt.sendRequested.connect(self.send)
+        wt.historyRequested.connect(self.show_history)
         wt.comingSoon.connect(self._coming_soon)
         wt.addTokenRequested.connect(self.add_token)
         wt.tokenRequested.connect(self.show_token)
@@ -96,6 +98,7 @@ class MainWindow(QMainWindow):
         pt.avatarRequested.connect(self.change_avatar)
         pt.removeAvatarRequested.connect(self.remove_avatar)
         pt.decorToggled.connect(self.toggle_decor)
+        pt.apiKeyRequested.connect(self.set_api_key)
         pt.set_decor_state(decor.ENABLED)
 
         self._heartbeat = QTimer(self)
@@ -271,6 +274,21 @@ class MainWindow(QMainWindow):
         dlg.deleteLater()
         if sent:
             wt.reload_tokens()               # muat ulang saldo setelah transaksi dikirim
+
+    def set_api_key(self) -> None:
+        dlg = ApiKeyDialog(self.vault, self)
+        dlg.exec()
+        dlg.deleteLater()
+        self.home.profile_tab.refresh()
+
+    def show_history(self) -> None:
+        wallet = self.vault.get_active_wallet()
+        if wallet is None:
+            return
+        wt = self.home.wallet_tab
+        dlg = HistoryDialog(self.vault, wt.service, wallet, wt.mode, self, run_in_thread=wt.run_in_thread)
+        dlg.exec()
+        dlg.deleteLater()
 
     def receive(self) -> None:
         wallet = self.vault.get_active_wallet()

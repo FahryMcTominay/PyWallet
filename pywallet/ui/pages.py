@@ -323,6 +323,7 @@ class WalletTab(QWidget):
     importRequested = Signal()
     receiveRequested = Signal()
     sendRequested = Signal()
+    historyRequested = Signal()
     addTokenRequested = Signal()
     tokenRequested = Signal(object)    # AssetRow yang diklik
     comingSoon = Signal(str)
@@ -505,6 +506,11 @@ class WalletTab(QWidget):
         self.count_lbl = label("", "small")
         header.addWidget(self.count_lbl)
         header.addSpacing(8)
+        self.history_btn = button("Riwayat", "pill")
+        self.history_btn.setToolTip("Riwayat transaksi wallet ini")
+        self.history_btn.clicked.connect(self.historyRequested)
+        header.addWidget(self.history_btn)
+        header.addSpacing(6)
         self.add_token_btn = button("＋ Token", "pill")
         self.add_token_btn.setToolTip("Tambah token lewat contract address")
         self.add_token_btn.clicked.connect(self.addTokenRequested)
@@ -838,13 +844,25 @@ class ProfileTab(_BackdropMixin, QWidget):
     avatarRequested = Signal()
     removeAvatarRequested = Signal()
     decorToggled = Signal()
+    apiKeyRequested = Signal()
 
     def __init__(self, vault: Vault, avatar_store: AvatarStore | None = None, parent: QWidget | None = None):
         super().__init__(parent)
         self.vault = vault
         self.store = avatar_store
         self._wallet: WalletRecord | None = None
-        root = QVBoxLayout(self)
+        # Isi profil bisa lebih tinggi dari jendela kecil, jadi diletakkan di area yang bisa digulir.
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setStyleSheet("QScrollArea, QScrollArea > QWidget > QWidget { background: transparent; }")
+        content = QWidget()
+        scroll.setWidget(content)
+        outer.addWidget(scroll)
+        root = QVBoxLayout(content)
         root.setContentsMargins(18, 20, 18, 12)
         root.setSpacing(10)
         root.addWidget(label("Profil", "title"))
@@ -896,7 +914,9 @@ class ProfileTab(_BackdropMixin, QWidget):
         self.secret_btn = button("Lihat seed phrase", "menuRow")
         self.delete_btn = button("Hapus wallet", "menuRowDanger")
         self.decor_btn = button("Hiasan latar: hidup", "menuRow")
+        self.api_btn = button("API key riwayat: belum diatur", "menuRow")
         self.lock_btn = button("Kunci aplikasi sekarang", "menuRow")
+        self.api_btn.clicked.connect(self.apiKeyRequested)
         self.photo_btn.clicked.connect(self.avatarRequested)
         self.remove_photo_btn.clicked.connect(self.removeAvatarRequested)
         self.rename_btn.clicked.connect(self.renameRequested)
@@ -904,7 +924,7 @@ class ProfileTab(_BackdropMixin, QWidget):
         self.delete_btn.clicked.connect(self.deleteRequested)
         self.lock_btn.clicked.connect(self.lockRequested)
         self.decor_btn.clicked.connect(self.decorToggled)
-        for b in (self.photo_btn, self.remove_photo_btn, self.rename_btn, self.secret_btn, self.decor_btn, self.delete_btn):
+        for b in (self.photo_btn, self.remove_photo_btn, self.rename_btn, self.secret_btn, self.decor_btn, self.api_btn, self.delete_btn):
             root.addWidget(b)
         root.addWidget(divider())
         root.addWidget(self.lock_btn)
@@ -925,6 +945,7 @@ class ProfileTab(_BackdropMixin, QWidget):
         self.decor_btn.setText("Hiasan latar: hidup" if on else "Hiasan latar: mati")
 
     def refresh(self) -> None:
+        self.api_btn.setText("API key riwayat: terpasang" if self.vault.get_history_api_key() else "API key riwayat: belum diatur")
         self._wallet = self.vault.get_active_wallet()
         if self._wallet is None:
             return
