@@ -153,3 +153,62 @@ def make_chain(contracts: dict[str, dict], native_wei: int = 0, balances: dict[s
         return [one(r) for r in payload] if isinstance(payload, list) else one(payload)
 
     return handler
+
+
+# --------------------------------------------------------------------------
+# Blockchain palsu untuk fitur Kirim (nonce, gas, kirim transaksi, receipt)
+# --------------------------------------------------------------------------
+class FakeSendChain:
+    """Meniru node EVM untuk alur kirim. Semua transaksi yang dikirim tercatat di `sent`."""
+
+    def __init__(self, chain_id=11155111, native_wei=10**18, token_raw=None, nonce=7,
+                 base_fee: int | None = 10**9, tip=10**9, gas_price=2 * 10**9,
+                 codes=None, estimate_error: str | None = None, send_error: str | None = None,
+                 receipt_status: int | None = 1, estimate_gas=21_000):
+        self.chain_id, self.native_wei, self.nonce = chain_id, native_wei, nonce
+        self.token_raw = {k.lower(): v for k, v in (token_raw or {}).items()}
+        self.base_fee, self.tip, self.gas_price = base_fee, tip, gas_price
+        self.codes = {k.lower() for k in (codes or ())}
+        self.estimate_error, self.send_error = estimate_error, send_error
+        self.receipt_status = receipt_status
+        self.estimate_gas = estimate_gas
+        self.sent: list[str] = []
+
+    def _one(self, req):
+        m, p = req["method"], req["params"]
+        ok = lambda r: {"jsonrpc": "2.0", "id": req["id"], "result": r}  # noqa: E731
+        err = lambda msg: {"jsonrpc": "2.0", "id": req["id"], "error": {"code": -32000, "message": msg}}  # noqa: E731
+        if m == "eth_chainId":
+            return ok(hex(self.chain_id))
+        if m == "eth_getTransactionCount":
+            return ok(hex(self.nonce))
+        if m == "eth_getBlockByNumber":
+            blk = {"number": "0x10"}
+            if self.base_fee is not None:
+                blk["baseFeePerGas"] = hex(self.base_fee)
+            return ok(blk)
+        if m == "eth_maxPriorityFeePerGas":
+            return ok(hex(self.tip)) if self.base_fee is not None else err("method not found")
+        if m == "eth_gasPrice":
+            return ok(hex(self.gas_price))
+        if m == "eth_getCode":
+            return ok("0x6080" if p[0].lower() in self.codes else "0x")
+        if m == "eth_getBalance":
+            return ok(hex(self.native_wei))
+        if m == "eth_call":
+            return ok(hex(self.token_raw.get(p[0]["to"].lower(), 0)))
+        if m == "eth_estimateGas":
+            return err(self.estimate_error) if self.estimate_error else ok(hex(self.estimate_gas))
+        if m == "eth_sendRawTransaction":
+            if self.send_error:
+                return err(self.send_error)
+            self.sent.append(p[0])
+            return ok("0x" + "ab" * 32)
+        if m == "eth_getTransactionReceipt":
+            if self.receipt_status is None:
+                return ok(None)
+            return ok({"status": hex(self.receipt_status), "blockNumber": "0x11"})
+        return err("no method")
+
+    def handler(self, payload):
+        return [self._one(r) for r in payload] if isinstance(payload, list) else self._one(payload)
