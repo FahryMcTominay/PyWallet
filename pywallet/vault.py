@@ -360,6 +360,27 @@ class Vault:
             raise VaultError("Data wallet rusak dan tidak bisa dibuka.") from exc
         return RevealedSecret(kind=record.secret_type, value=plain.decode())
 
+    def sign_transfer(self, wallet_id: int, password: str, tx_fields: dict) -> tuple[str, str]:
+        """Tanda tangani transaksi dengan kunci wallet. Selalu meminta master password.
+
+        Kunci hanya hidup sebentar di memori di dalam fungsi ini dan tidak pernah dikembalikan.
+        Mengembalikan (raw_tx_hex, tx_hash).
+        """
+        record = self.get_wallet(wallet_id)
+        secret = self.reveal_secret(wallet_id, password)       # memeriksa password
+        try:
+            if secret.kind == SECRET_MNEMONIC:
+                account = wallet_core.account_from_mnemonic(secret.value)
+            else:
+                account = wallet_core.account_from_private_key(secret.value)
+            if account.address != record.address:
+                raise VaultError("Kunci wallet tidak cocok dengan alamatnya. Transaksi dibatalkan.")
+            signed = account.sign_transaction(tx_fields)
+        finally:
+            secret = None   # noqa: F841 - lepaskan referensi rahasia secepat mungkin
+        raw = getattr(signed, "raw_transaction", None) or signed.rawTransaction
+        return "0x" + bytes(raw).hex(), "0x" + bytes(signed.hash).hex()
+
     def delete_wallet(self, wallet_id: int, password: str) -> None:
         """Hapus wallet dari aplikasi. Dana tetap aman di blockchain dan bisa
         dipulihkan lagi lewat seed phrase / private key."""

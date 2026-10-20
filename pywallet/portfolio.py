@@ -137,6 +137,9 @@ class PortfolioService:
         self.prices = PriceService(self.http)
         self._rpc = {k: RpcClient(self.http, n.rpc_urls) for k, n in NETWORKS.items()}
 
+    def rpc_for(self, network: str) -> RpcClient:
+        return self._rpc[network]
+
     def token_info(self, network: str, address: str):
         """Baca nama/simbol/desimal token dari blockchain (untuk fitur tambah token)."""
         return fetch_token_info(self._rpc[network], address)
