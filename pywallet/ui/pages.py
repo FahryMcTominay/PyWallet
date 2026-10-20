@@ -322,6 +322,7 @@ class WalletTab(QWidget):
     createRequested = Signal()
     importRequested = Signal()
     receiveRequested = Signal()
+    sendRequested = Signal()
     addTokenRequested = Signal()
     tokenRequested = Signal(object)    # AssetRow yang diklik
     comingSoon = Signal(str)
@@ -452,7 +453,7 @@ class WalletTab(QWidget):
         send = CircleAction("send", "Kirim")
         recv = CircleAction("receive", "Terima")
         trade = CircleAction("swap", "Trade")
-        send.clicked.connect(lambda: self.comingSoon.emit("Kirim"))
+        send.clicked.connect(self.sendRequested)
         recv.clicked.connect(self.receiveRequested)
         trade.clicked.connect(lambda: self.comingSoon.emit("Trade"))
         for w in (send, recv, trade):

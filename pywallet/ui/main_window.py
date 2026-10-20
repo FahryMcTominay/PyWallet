@@ -28,6 +28,7 @@ from .dialogs import (
     SecretDialog,
 )
 from .pages import EmptyPage, HomePage, SetupPage, UnlockPage
+from .send_dialog import SendDialog
 from .token_dialogs import AddTokenDialog, TokenDetailDialog
 
 PAGE_SETUP, PAGE_UNLOCK, PAGE_EMPTY, PAGE_HOME = range(4)
@@ -82,6 +83,7 @@ class MainWindow(QMainWindow):
         wt.createRequested.connect(self.create_wallet)
         wt.importRequested.connect(self.import_wallet)
         wt.receiveRequested.connect(self.receive)
+        wt.sendRequested.connect(self.send)
         wt.comingSoon.connect(self._coming_soon)
         wt.addTokenRequested.connect(self.add_token)
         wt.tokenRequested.connect(self.show_token)
@@ -253,6 +255,23 @@ class MainWindow(QMainWindow):
             page.update()
         self.home.repaint_decor()
 
+    def send(self) -> None:
+        wallet = self.vault.get_active_wallet()
+        wt = self.home.wallet_tab
+        snap = wt.snapshot
+        if wallet is None:
+            return
+        if snap is None or snap.address != wallet.address or snap.mode != wt.mode:
+            QMessageBox.information(self, "Kirim", "Saldo belum selesai dimuat. Tunggu sebentar lalu coba lagi.")
+            return
+        dlg = SendDialog(self.vault, wt.service, wallet, snap.rows, self)
+        dlg.run_in_thread = wt.run_in_thread
+        dlg.exec()
+        sent = dlg.sent_hash is not None
+        dlg.deleteLater()
+        if sent:
+            wt.reload_tokens()               # muat ulang saldo setelah transaksi dikirim
+
     def receive(self) -> None:
         wallet = self.vault.get_active_wallet()
         if wallet:
@@ -265,5 +284,5 @@ class MainWindow(QMainWindow):
         self._show_unlock()
 
     def _coming_soon(self, feature: str) -> None:
-        stage = {"Kirim": "tahap 4", "Trade": "tahap 5"}.get(feature, "tahap berikutnya")
+        stage = {"Trade": "tahap 5"}.get(feature, "tahap berikutnya")
         QMessageBox.information(self, feature, f"Fitur {feature} akan hadir di {stage}.")

@@ -121,6 +121,16 @@ QLineEdit, QPlainTextEdit {{
 }}
 QLineEdit:focus, QPlainTextEdit:focus {{ border: 1px solid {ACCENT}; }}
 QLineEdit:disabled {{ color: {MUTED}; }}
+QComboBox {{
+    background: {BG}; border: 1px solid {LINE}; border-radius: 10px;
+    padding: 9px 12px; color: {TEXT_STRONG};
+}}
+QComboBox:focus {{ border: 1px solid {ACCENT}; }}
+QComboBox::drop-down {{ border: none; width: 26px; }}
+QComboBox QAbstractItemView {{
+    background: {SURFACE}; color: {TEXT_STRONG}; border: 1px solid {LINE};
+    selection-background-color: {ACCENT_DEEP}; selection-color: {TEXT_STRONG}; outline: 0;
+}}
 
 QCheckBox {{ spacing: 10px; color: {TEXT}; }}
 QCheckBox::indicator {{ width: 18px; height: 18px; border-radius: 5px;
