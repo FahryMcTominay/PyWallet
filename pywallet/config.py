@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 
 APP_NAME = "PyWallet"
-APP_VERSION = "0.6.0"
+APP_VERSION = "0.7.3"
 
 # Jeda tanpa master password: jika aplikasi terakhir aktif < 5 menit lalu,
 # lobi bisa dibuka tanpa password. Aksi sensitif tetap meminta password.

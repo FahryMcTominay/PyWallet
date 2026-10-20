@@ -15,7 +15,7 @@ python main.py
 
 Tes: `python -m pytest -q`. Data aplikasi: `%APPDATA%\PyWallet\` (database `pywallet.db` + folder `avatars`).
 
-## Fitur saat ini (v0.6.0)
+## Fitur saat ini (v0.7.3)
 
 | Fitur | Keterangan |
 |---|---|
@@ -29,13 +29,14 @@ Tes: `python -m pytest -q`. Data aplikasi: `%APPDATA%\PyWallet\` (database `pywa
 | Harga pasar | Binance (publik, tanpa API key) + kurs USD→IDR; grafik mini ETH 24 jam |
 | Saldo on-chain | RPC publik (failover antar-endpoint) |
 | Terima | Alamat + QR code |
+| **Riwayat transaksi** | Tombol **Riwayat** di lobi: transaksi keluar dan masuk (koin native + token) wallet aktif, status (menunggu/gagal), token tak dikenal ditandai; klik baris untuk membuka explorer |
 | **Kirim** | ETH/koin native dan token ERC-20 (termasuk token kustom): pilih aset, alamat, jumlah (tombol Maks), kecepatan gas Lambat/Normal/Cepat, tinjau, master password, lalu pantau sampai masuk blok |
 | Halaman login | Font Poppins (SIL OFL 1.1, lihat `pywallet/assets/fonts/OFL.txt`), latar bercahaya, logo |
 | **Tema baru** | Palet abu-abu gelap, teal, biru-teal tua, dan abu pucat; motif kucing/pita/bintang gambar sendiri (bukan gambar karakter mana pun) |
 | **Animasi geser** | Berpindah Wallet/Swap/Profil menggeser halaman (280 ms); klik beruntun tidak macet |
 | **Hiasan latar** | Pita besar, sketsa kucing, dan bintang kecil beropacity rendah di latar; Telinga kucing kecil gaya coretan pensil hanya di tombol Kirim/Terima/Trade (dan ikon aplikasi). Bisa dimatikan dari Profil (pilihan diingat) |
 
-Belum ada: Trade (menampilkan pesan "akan hadir"), riwayat transaksi, buku alamat, nama ENS, jaringan buatan sendiri.
+Belum ada: Trade (menampilkan pesan "akan hadir"), buku alamat, nama ENS, jaringan buatan sendiri.
 
 ### Tambah token lewat contract address
 
@@ -67,6 +68,30 @@ Pengaman yang dipasang:
 - Di mainnet muncul peringatan tambahan bahwa dana sungguhan tidak bisa ditarik kembali.
 
 Uji dulu di **Testnet (Sepolia)** dengan ETH uji dari faucet. Saldo dimuat ulang otomatis setelah transaksi terkirim.
+
+### Riwayat transaksi
+
+Dialog **Riwayat** (`ui/history_dialog.py`, logikanya di `pywallet/history.py`) menggabungkan dua sumber:
+1. **API explorer** berformat Etherscan (`txlist` dan `tokentx`). Bawaannya instance **Blockscout publik** tiap jaringan
+   (`Network.history_api` di `networks.py`), **tanpa API key**. Ethereum dan Base dipilih karena API gratis Etherscan
+   tidak lagi mencakup Base; format yang sama bisa dipakai Etherscan jika kelak ingin diganti.
+2. **Catatan lokal** (tabel `tx_log`, skema v4): transaksi yang kamu kirim dari aplikasi langsung tampil sebagai
+   "Menunggu"; statusnya diperbarui lewat receipt dari RPC saat riwayat dibuka. Jika explorer sedang bermasalah,
+   catatan lokal tetap tampil.
+
+Keamanan: respons explorer diperlakukan sebagai input tak tepercaya (setiap bidang divalidasi, karakter kontrol pada
+simbol token dibuang). Transfer token bernilai nol disembunyikan karena sering dipakai modus *address poisoning*,
+dan token yang tidak ada di daftarmu diberi label "Token tidak dikenal". Hanya 50 transaksi terbaru per jenis dan
+per jaringan yang dimuat. Karena API publik tanpa key punya batas laju, permintaan yang ditolak (HTTP 429) dicoba ulang
+dua kali dengan jeda, hasil disimpan 45 detik (tombol **Muat ulang** melewatinya), dan bila gagal setelah pernah
+berhasil, data lama tetap ditampilkan. Pesan galat menyertakan alasannya.
+
+**API key (opsional, disarankan jika sering kena 429):** tab Profil -> *API key riwayat*. Daftar gratis di
+`dev.blockscout.com` (tanpa kartu kredit); satu key **Blockscout PRO** berlaku untuk Ethereum, Base, dan Sepolia dan
+batas lajunya jauh lebih longgar. Key divalidasi (huruf/angka/`_`/`-`), hanya dikirim ke `api.blockscout.com`,
+disimpan di database lokal tanpa enkripsi (bukan kunci wallet; tidak bisa menggerakkan dana), dan otomatis
+disamarkan di pesan galat. Tanpa key, aplikasi tetap memakai API publik. Tab Profil kini bisa digulir. Alamat endpoint belum diuji dari lingkungan pengembangan (tanpa internet); bila ada yang
+berubah, cukup ubah `history_api`.
 
 ### Daftar token mainnet
 
@@ -103,17 +128,18 @@ dan penjelasan bagaimana Kirim/Swap nanti berinteraksi dengan blockchain.
 main.py                    titik masuk
 pywallet/
   config.py                konstanta, lokasi data, saklar EXTENDED_TOKEN_LIST
-  crypto.py, db.py         enkripsi, SQLite (skema v2: kolom avatar)
+  crypto.py, db.py         enkripsi, SQLite (skema v4: avatar, token kustom, tx_log)
   wallet_core.py, vault.py akun EVM, master password, CRUD wallet, preferensi
   avatars.py               impor foto profil
   networks.py, tokens.py   jaringan & token
   tx.py                    Kirim: validasi, gas, susun transaksi, kirim, receipt
+  history.py               Riwayat: parser explorer, gabung catatan lokal
   httpclient.py, rpc.py    HTTP/JSON-RPC
   prices.py, portfolio.py  harga Binance, kurs, total aset & pengurutan
   formatting.py            USD, Rupiah, ETH, persen
   assets/                  logo ETH, font Poppins
   ui/                      tema, motif (decor.py), ikon, widget, halaman, dialog, jendela utama
-tests/                     core, UI (offscreen), lapisan data (jaringan palsu), foto profil, motif latar, Kirim
+tests/                     core, UI (offscreen), lapisan data (jaringan palsu), foto profil, motif latar, Kirim, riwayat
 ```
 
 ## Rencana

@@ -55,12 +55,14 @@ dites tanpa layar (`tests/test_vault.py`), dan kamu bisa mengubah tampilan tanpa
 | `avatars.py` | Menerima gambar dari komputer, memotong persegi, menyimpan salinan kecil |
 | `networks.py`, `tokens.py` | Daftar jaringan (Ethereum, Base, Sepolia) dan token |
 | `rpc.py` | Tanya saldo ke node blockchain |
+| `history.py` | Riwayat transaksi: ambil dari explorer, gabung dengan catatan lokal, tandai yang mencurigakan |
 | `tx.py` | Kirim aset: validasi alamat/jumlah, hitung gas, susun & kirim transaksi, cek receipt |
 | `prices.py` | Tanya harga ke Binance dan kurs USD→IDR |
 | `portfolio.py` | Menggabungkan saldo + harga menjadi satu "potret" (Snapshot) |
 | `formatting.py` | Format angka: `$6,000.00`, `Rp96.000.000`, `0,05 ETH` |
 | `ui/main_window.py` | Jendela utama; **menghubungkan klik tombol ke aksi** |
 | `ui/pages.py` | Halaman-halaman (login, lobi, swap, profil, navigasi bawah) |
+| `ui/history_dialog.py` | Dialog Riwayat: daftar transaksi, status, klik untuk buka explorer |
 | `ui/send_dialog.py` | Dialog Kirim: form -> tinjau + password -> status transaksi |
 | `ui/dialogs.py` | Kotak dialog (password, buat wallet, impor, ganti nama, hapus, terima) |
 | `ui/widgets.py` | Komponen kecil yang dipakai ulang (avatar, kartu, tombol bulat, QR, animasi geser) |
@@ -250,6 +252,24 @@ Tiga hal yang perlu diperhatikan:
   adalah batas atas; yang dibayar biasanya lebih kecil.
 - Untuk **token**, transaksi ditujukan ke alamat kontrak token dengan `value = 0` dan data `transfer(tujuan, jumlah)`
   (`tx.encode_transfer`); biaya gasnya tetap dibayar dengan koin native (mis. ETH), jadi token saja tidak cukup.
+
+### 4.7 Riwayat (`history.py`, `ui/history_dialog.py`)
+Blockchain tidak bisa ditanya "tunjukkan semua transaksi alamat ini" lewat RPC biasa; node hanya menjawab
+pertanyaan per blok atau per transaksi. Karena itu riwayat diambil dari **explorer** yang sudah mengindeks semuanya.
+
+```
+Tombol Riwayat -> MainWindow.show_history -> HistoryDialog.reload
+   (thread)    -> HistoryService.load(alamat, mode, catatan_lokal, token_dikenal)
+                    per jaringan: txlist  (koin native + panggilan kontrak)
+                                  tokentx (transfer token ERC-20)
+                    parse_txlist / parse_tokentx    validasi tiap bidang (data luar = tidak tepercaya)
+                    merge                            buang "panggilan kontrak" yang sebenarnya transfer token
+                    gabung catatan lokal tx_log      transaksi baru kirim muncul walau belum terindeks
+                    cek receipt untuk yang "menunggu" -> status diperbarui ke database
+   (utama)     -> _render: satu HistoryRow per transaksi
+```
+Perhatikan juga pemisahan tugasnya: SQLite hanya dibaca di thread utama (`list_sent_txs`), lalu datanya dibawa ke
+thread kerja; hasil pembaruan status dikembalikan lewat signal dan ditulis lagi di thread utama.
 
 ---
 
