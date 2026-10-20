@@ -203,7 +203,8 @@ class FakeSendChain:
             if self.send_error:
                 return err(self.send_error)
             self.sent.append(p[0])
-            return ok("0x" + "ab" * 32)
+            from eth_utils import keccak
+            return ok("0x" + keccak(bytes.fromhex(p[0].removeprefix("0x"))).hex())   # hash asli, seperti node sungguhan
         if m == "eth_getTransactionReceipt":
             if self.receipt_status is None:
                 return ok(None)

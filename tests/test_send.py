@@ -5,6 +5,7 @@ from decimal import Decimal
 
 import pytest
 from eth_account import Account
+from eth_utils import keccak
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -197,7 +198,7 @@ def test_sign_transfer_works_with_imported_private_key(vault):
 def test_broadcast_and_receipt():
     chain = FakeSendChain()
     rpc = rpc_for(chain)
-    assert tx.broadcast(rpc, "0xdeadbeef") == "0x" + "ab" * 32
+    assert tx.broadcast(rpc, "0xdeadbeef") == "0x" + keccak(bytes.fromhex("deadbeef")).hex()
     assert chain.sent == ["0xdeadbeef"]
     assert tx.fetch_receipt(rpc, "0x" + "ab" * 32) == tx.Receipt(True, 17)
     assert tx.fetch_receipt(rpc_for(FakeSendChain(receipt_status=0)), "0x1").success is False
@@ -264,7 +265,7 @@ def test_dialog_full_flow_native(qapp, vault, wallet):
     dlg.speed_buttons[tx.SPEED_FAST].click()
     dlg.pw_field.edit.setText(PW)
     dlg.send_btn.click()
-    assert len(chain.sent) == 1 and dlg.sent_hash == "0x" + "ab" * 32
+    assert len(chain.sent) == 1 and dlg.sent_hash == "0x" + keccak(bytes.fromhex(chain.sent[0][2:])).hex()
     signed = Account.recover_transaction(chain.sent[0])
     assert signed == wallet.address
     assert dlg.pages.currentIndex() == 2 and "Berhasil" in dlg.status_title.text()
