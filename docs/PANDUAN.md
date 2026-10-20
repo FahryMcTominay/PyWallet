@@ -55,11 +55,13 @@ dites tanpa layar (`tests/test_vault.py`), dan kamu bisa mengubah tampilan tanpa
 | `avatars.py` | Menerima gambar dari komputer, memotong persegi, menyimpan salinan kecil |
 | `networks.py`, `tokens.py` | Daftar jaringan (Ethereum, Base, Sepolia) dan token |
 | `rpc.py` | Tanya saldo ke node blockchain |
+| `tx.py` | Kirim aset: validasi alamat/jumlah, hitung gas, susun & kirim transaksi, cek receipt |
 | `prices.py` | Tanya harga ke Binance dan kurs USD→IDR |
 | `portfolio.py` | Menggabungkan saldo + harga menjadi satu "potret" (Snapshot) |
 | `formatting.py` | Format angka: `$6,000.00`, `Rp96.000.000`, `0,05 ETH` |
 | `ui/main_window.py` | Jendela utama; **menghubungkan klik tombol ke aksi** |
 | `ui/pages.py` | Halaman-halaman (login, lobi, swap, profil, navigasi bawah) |
+| `ui/send_dialog.py` | Dialog Kirim: form -> tinjau + password -> status transaksi |
 | `ui/dialogs.py` | Kotak dialog (password, buat wallet, impor, ganti nama, hapus, terima) |
 | `ui/widgets.py` | Komponen kecil yang dipakai ulang (avatar, kartu, tombol bulat, QR, animasi geser) |
 | `ui/theme.py` | Semua warna dan gaya (QSS, mirip CSS) |
@@ -227,12 +229,34 @@ Paling sederhana: **tidak ada komunikasi jaringan sama sekali**. Dialog hanya me
 code-nya. Siapa pun boleh tahu alamat; ia hanya bisa mengirim ke situ, tidak bisa mengambil dari situ. Dana
 yang masuk langsung terlihat di blockchain, lalu muncul di aplikasi saat saldo dimuat ulang.
 
+### 4.6 Kirim (`tx.py`, `ui/send_dialog.py`, `vault.py`)
+Dialog Kirim punya tiga halaman. Berikut urutan panggilan kodenya:
+
+```
+Tombol Kirim (pages.py)  --sendRequested-->  MainWindow.send()            membuka SendDialog
+  SendDialog "Lanjut"  -> tx.normalize_recipient / tx.parse_amount        periksa input (tanpa jaringan)
+                       -> tx.prepare_transfer  (thread terpisah)          1 batch RPC: chain ID, nonce, base fee,
+                                                                          priority fee, gasPrice, kode tujuan,
+                                                                          saldo native, estimateGas
+                       -> TransferPlan                                    "paket" berisi semua angka di atas
+  Halaman Tinjau       -> plan.tx_fields(kecepatan)                       bidang transaksi sesuai pilihan Lambat/Normal/Cepat
+  "Kirim sekarang"     -> Vault.sign_transfer(id, password, fields)       buka kunci, tanda tangan, buang kunci
+                       -> tx.broadcast (thread)                           eth_sendRawTransaction -> hash
+                       -> tx.fetch_receipt (diulang tiap 4 detik)         sukses / gagal / belum masuk blok
+```
+Tiga hal yang perlu diperhatikan:
+- **Nonce** = nomor urut transaksi akunmu. Dua transaksi tidak boleh memakai nonce yang sama; node menolak yang lama.
+- **Gas** = ongkos komputasi. `gas_limit` (batas jumlah pekerjaan) dikali harga per gas = biaya. Tampilan "maks"
+  adalah batas atas; yang dibayar biasanya lebih kecil.
+- Untuk **token**, transaksi ditujukan ke alamat kontrak token dengan `value = 0` dan data `transfer(tujuan, jumlah)`
+  (`tx.encode_transfer`); biaya gasnya tetap dibayar dengan koin native (mis. ETH), jadi token saja tidak cukup.
+
 ---
 
 ## 5. Kirim dan Swap: cara kerjanya dengan blockchain
 
-> **Status:** tombol Kirim dan Trade saat ini baru menampilkan pesan "akan hadir". Bagian ini menjelaskan
-> **bagaimana nanti dibuatnya**, supaya kamu paham sebelum kodenya ada (tahap 4 dan 5).
+> **Status:** Kirim (5.2 dan 5.3) **sudah dibuat** di tahap 4: lihat `tx.py` dan `ui/send_dialog.py`, dan alur
+> kodenya di bagian 4.6. Tombol Trade masih menampilkan pesan "akan hadir"; 5.4 menjelaskan rencananya (tahap 5).
 
 ### 5.1 Pertama: apa itu "server desentralisasi"?
 Blockchain Ethereum dijalankan oleh ribuan komputer (*node*) di seluruh dunia yang menyimpan **buku besar yang
@@ -244,7 +268,7 @@ Wallet berbicara dengan blockchain lewat **node RPC**, yaitu pintu masuk berupa 
 `https://ethereum-sepolia-rpc.publicnode.com` (lihat `networks.py`). Itulah satu-satunya "server" yang diajak
 bicara, dan sifatnya hanya perantara. Ia tidak memegang kuncimu.
 
-### 5.2 Kirim ETH (rencana tahap 4)
+### 5.2 Kirim ETH
 ```
 1. User isi alamat tujuan + jumlah
 2. Aplikasi tanya ke node (RPC):
@@ -258,7 +282,7 @@ bicara, dan sifatnya hanya perantara. Ia tidak memegang kuncimu.
 ```
 Poin terpenting: **private key tidak pernah meninggalkan komputer.** Yang dikirim ke node hanya transaksi yang
 sudah ditandatangani. Node bisa memeriksa tanda tangan itu sah, tetapi tidak bisa menirunya. `chainId` ikut
-ditandatangani supaya transaksi Sepolia tidak bisa "diputar ulang" di mainnet. Karena itu pengiriman akan
+ditandatangani supaya transaksi Sepolia tidak bisa "diputar ulang" di mainnet. Karena itu pengiriman
 wajib master password.
 
 Pustaka `eth-account` (sudah dipakai di `wallet_core.py`) menyediakan penandatanganan ini.
@@ -284,8 +308,8 @@ dan penjual; kontrak memakai *kolam likuiditas* (pool) dan rumus harga.
 - **Approve**: kontrak token harus diizinkan dulu memindahkan token milikmu. Ini juga alasan mengapa swap
   ke kontrak asing yang tidak dikenal berbahaya.
 
-### 5.5 Risiko yang akan kita jaga
-Transaksi blockchain **tidak bisa dibatalkan**. Karena itu nanti akan ada: layar konfirmasi yang menampilkan
+### 5.5 Risiko yang dijaga
+Transaksi blockchain **tidak bisa dibatalkan**. Karena itu ada: layar konfirmasi yang menampilkan
 alamat tujuan lengkap, jaringan, dan biaya; peringatan jika alamat salah format; dan **uji dulu di Sepolia**
 dengan ETH uji gratis (faucet) sebelum menyentuh mainnet.
 
