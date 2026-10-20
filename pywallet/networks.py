@@ -19,6 +19,7 @@ class Network:
     badge_color: str   # warna lencana kecil di ikon token
     badge_text: str
     explorer: str = ""   # alamat dasar block explorer (untuk memeriksa token/transaksi)
+    history_api: str = ""  # API riwayat (format Etherscan: module=account&action=txlist), tanpa API key
 
 
 NETWORKS: dict[str, Network] = {
@@ -35,6 +36,7 @@ NETWORKS: dict[str, Network] = {
         badge_color="#F5EEE9",
         badge_text="",
         explorer="https://etherscan.io",
+        history_api="https://eth.blockscout.com/api",
     ),
     "base": Network(
         key="base",
@@ -49,6 +51,7 @@ NETWORKS: dict[str, Network] = {
         badge_color="#2F6BFF",
         badge_text="B",
         explorer="https://basescan.org",
+        history_api="https://base.blockscout.com/api",
     ),
     "sepolia": Network(
         key="sepolia",
@@ -63,6 +66,7 @@ NETWORKS: dict[str, Network] = {
         badge_color="#D9A35B",
         badge_text="S",
         explorer="https://sepolia.etherscan.io",
+        history_api="https://eth-sepolia.blockscout.com/api",
     ),
 }
 

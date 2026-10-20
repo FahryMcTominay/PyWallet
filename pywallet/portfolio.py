@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import Sequence
 
+from .history import HistoryService
 from .formatting import UNIT_ETH, UNIT_IDR, UNIT_USD
 from .httpclient import HttpClient, UrllibClient
 from .networks import MODE_MAINNET, NETWORKS
@@ -136,6 +137,7 @@ class PortfolioService:
         self.http = http or UrllibClient()
         self.prices = PriceService(self.http)
         self._rpc = {k: RpcClient(self.http, n.rpc_urls) for k, n in NETWORKS.items()}
+        self.history = HistoryService(self.http, self.rpc_for)
 
     def rpc_for(self, network: str) -> RpcClient:
         return self._rpc[network]

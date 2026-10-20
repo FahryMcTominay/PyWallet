@@ -29,7 +29,7 @@ from .. import tx
 from ..formatting import format_amount
 from ..networks import NETWORKS
 from ..portfolio import AssetRow, PortfolioService
-from ..vault import InvalidPassword, Vault, VaultError, WalletRecord
+from ..vault import InvalidPassword, SentTx, Vault, VaultError, WalletRecord
 from . import theme
 from .dialogs import BaseDialog, button
 from .token_dialogs import open_url
@@ -70,6 +70,7 @@ class SendDialog(BaseDialog):
         self._busy = False
         self._closing = False
         self._tx_network = ""
+        self._to_record: SentTx | None = None
         self._prepared.connect(self._on_prepared)
         self._broadcasted.connect(self._on_broadcasted)
         self._receipt.connect(self._on_receipt)
@@ -425,6 +426,11 @@ class SendDialog(BaseDialog):
         self.pw_field.clear()
         self._busy = True
         self._tx_network = plan.network
+        self._to_record = SentTx(
+            network=plan.network, tx_hash=tx_hash, wallet_address=self.wallet.address, to_address=plan.to,
+            symbol=plan.token.symbol, decimals=plan.token.decimals, token_address=plan.token.address,
+            amount_raw=plan.final_amount(self._speed), status="pending", block=None, created_at=int(time.time()),
+        )
         self.send_btn.setEnabled(False)
         self.status_title.setText("Mengirim transaksi…")
         self.status_detail.setText("Menandatangani selesai. Mengirim ke jaringan.")
@@ -502,6 +508,8 @@ class SendDialog(BaseDialog):
             self._set_status_buttons(done=True)
             return
         self.sent_hash = result
+        if self._to_record is not None:                     # catat ke riwayat lokal (status: menunggu)
+            self.vault.record_sent_tx(self._to_record)
         self.status_title.setStyleSheet("")
         self.status_title.setText("Transaksi terkirim")
         self.status_detail.setText("Menunggu masuk ke blok. Kamu boleh menutup jendela ini; transaksi tetap berjalan.")
@@ -531,6 +539,8 @@ class SendDialog(BaseDialog):
     def _on_receipt(self, rid: int, receipt) -> None:
         if rid != self._rid:
             return
+        if receipt is not None and self.sent_hash:
+            self.vault.set_tx_status(self._tx_network, self.sent_hash, "success" if receipt.success else "failed", receipt.block)
         if receipt is None:
             self.status_title.setText("Masih menunggu konfirmasi")
             self.status_detail.setText(

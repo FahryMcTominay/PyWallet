@@ -1,7 +1,8 @@
 """Database SQLite lokal.
 
-Hanya menyimpan data milik aplikasi: pengaturan dan wallet (nama, alamat, rahasia
-terenkripsi). Saldo dan riwayat transaksi tetap berada di blockchain.
+Hanya menyimpan data milik aplikasi: pengaturan, wallet (nama, alamat, rahasia
+terenkripsi), token kustom, dan catatan transaksi yang dikirim dari aplikasi ini (`tx_log`).
+Saldo dan riwayat lengkap tetap berada di blockchain.
 """
 from __future__ import annotations
 
@@ -10,7 +11,7 @@ import sqlite3
 import sys
 from pathlib import Path
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 
 class Database:
@@ -71,6 +72,32 @@ class Database:
                 """
             )
             self.conn.execute("PRAGMA user_version = 3")
+            self.conn.commit()
+
+        if version < 4:
+            # v4: catatan transaksi keluar dari aplikasi (agar langsung tampil sebagai "menunggu")
+            self.conn.executescript(
+                """
+                CREATE TABLE tx_log (
+                    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+                    network        TEXT NOT NULL,
+                    tx_hash        TEXT NOT NULL,
+                    wallet_address TEXT NOT NULL,
+                    to_address     TEXT NOT NULL,
+                    symbol         TEXT NOT NULL,
+                    decimals       INTEGER NOT NULL,
+                    token_address  TEXT,
+                    amount_raw     TEXT NOT NULL,
+                    status         TEXT NOT NULL DEFAULT 'pending'
+                                   CHECK (status IN ('pending', 'success', 'failed')),
+                    block          INTEGER,
+                    created_at     INTEGER NOT NULL,
+                    UNIQUE (network, tx_hash)
+                );
+                CREATE INDEX idx_tx_log_wallet ON tx_log (wallet_address);
+                """
+            )
+            self.conn.execute("PRAGMA user_version = 4")
             self.conn.commit()
 
     # --- pengaturan -------------------------------------------------------

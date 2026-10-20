@@ -67,6 +67,22 @@ class WalletRecord:
 
 
 @dataclass(frozen=True)
+class SentTx:
+    """Catatan transaksi keluar yang dikirim dari aplikasi ini."""
+    network: str
+    tx_hash: str
+    wallet_address: str
+    to_address: str
+    symbol: str
+    decimals: int
+    token_address: str | None
+    amount_raw: int
+    status: str            # pending | success | failed
+    block: int | None
+    created_at: int
+
+
+@dataclass(frozen=True)
 class RevealedSecret:
     kind: str   # SECRET_MNEMONIC | SECRET_PRIVATE_KEY
     value: str
@@ -84,6 +100,16 @@ def validate_name(name: str) -> str:
         raise VaultError(f"Nama wallet maksimal {MAX_WALLET_NAME_LENGTH} karakter.")
     if any(unicodedata.category(ch).startswith("C") for ch in cleaned):
         raise VaultError("Nama wallet mengandung karakter yang tidak diizinkan.")
+    return cleaned
+
+
+def validate_api_key(key: str) -> str:
+    """API key Blockscout PRO: huruf/angka/_/- saja, agar tidak bisa menyelipkan karakter ke URL."""
+    cleaned = (key or "").strip()
+    if not cleaned:
+        raise VaultError("API key tidak boleh kosong.")
+    if len(cleaned) > 128 or any(not (c.isascii() and (c.isalnum() or c in "_-")) for c in cleaned):
+        raise VaultError("API key tidak valid. Salin ulang dari dev.blockscout.com (huruf, angka, _ dan - saja).")
     return cleaned
 
 
@@ -337,6 +363,38 @@ class Vault:
             )
 
     # ------------------------------------------------------------------
+    # Catatan transaksi keluar (riwayat lokal; riwayat lengkap diambil dari explorer)
+    # ------------------------------------------------------------------
+    def record_sent_tx(self, tx: SentTx) -> None:
+        with self.db.conn:
+            self.db.conn.execute(
+                "INSERT OR IGNORE INTO tx_log (network, tx_hash, wallet_address, to_address, symbol, decimals, "
+                "token_address, amount_raw, status, block, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                (tx.network, tx.tx_hash.lower(), tx.wallet_address, tx.to_address, tx.symbol, tx.decimals,
+                 tx.token_address, str(tx.amount_raw), tx.status, tx.block, tx.created_at),
+            )
+
+    def list_sent_txs(self, wallet_address: str, networks: tuple[str, ...] | None = None) -> list[SentTx]:
+        rows = self.db.conn.execute(
+            "SELECT * FROM tx_log WHERE wallet_address = ? ORDER BY created_at DESC, id DESC", (wallet_address,)
+        ).fetchall()
+        return [
+            SentTx(r["network"], r["tx_hash"], r["wallet_address"], r["to_address"], r["symbol"], r["decimals"],
+                   r["token_address"], int(r["amount_raw"]), r["status"], r["block"], r["created_at"])
+            for r in rows
+            if networks is None or r["network"] in networks
+        ]
+
+    def set_tx_status(self, network: str, tx_hash: str, status: str, block: int | None = None) -> None:
+        if status not in ("pending", "success", "failed"):
+            raise VaultError("Status transaksi tidak valid.")
+        with self.db.conn:
+            self.db.conn.execute(
+                "UPDATE tx_log SET status = ?, block = COALESCE(?, block) WHERE network = ? AND tx_hash = ?",
+                (status, block, network, tx_hash.lower()),
+            )
+
+    # ------------------------------------------------------------------
     # Preferensi tampilan (bukan data sensitif)
     # ------------------------------------------------------------------
     def get_pref(self, key: str, default: str | None = None) -> str | None:
@@ -344,6 +402,13 @@ class Vault:
 
     def set_pref(self, key: str, value: str) -> None:
         self.db.set_setting(f"pref:{key}", value)
+
+    def get_history_api_key(self) -> str:
+        return self.get_pref("history_api_key", "") or ""
+
+    def set_history_api_key(self, key: str | None) -> None:
+        """Simpan (atau hapus bila None/kosong) API key untuk riwayat. Bukan rahasia wallet, tapi jangan dibagikan."""
+        self.set_pref("history_api_key", validate_api_key(key) if key and key.strip() else "")
 
     # ------------------------------------------------------------------
     # Sensitif: lihat rahasia & hapus (selalu butuh password)
