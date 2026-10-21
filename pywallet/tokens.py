@@ -28,6 +28,7 @@ class Token:
     color: str = "#456882"           # warna latar ikon
     glyph: str = ""                  # teks pada ikon (default: huruf pertama)
     custom: bool = False             # True = ditambahkan pengguna lewat contract address
+    coingecko_id: str | None = None  # ID koin CoinGecko (token kustom; diverifikasi lewat contract address)
 
     @property
     def key(self) -> str:
@@ -107,10 +108,11 @@ def normalize_contract_address(text: str) -> str:
 _CUSTOM_COLORS = ("#2E8B9A", "#5A7D8C", "#3F9C8A", "#7A8CA3", "#4A8FB0", "#6B9E94", "#8A7FA8", "#5C9FA6")
 
 
-def make_custom_token(network: str, address: str, symbol: str, name: str, decimals: int) -> Token:
+def make_custom_token(network: str, address: str, symbol: str, name: str, decimals: int,
+                      coingecko_id: str | None = None) -> Token:
     """Token kustom: tanpa pasangan harga; warna ikon diturunkan dari alamat kontrak (stabil)."""
     color = _CUSTOM_COLORS[hashlib.sha256(address.lower().encode()).digest()[0] % len(_CUSTOM_COLORS)]
-    return Token(network, symbol, name, decimals, address, None, None, color, (symbol[:1] or "?").upper(), True)
+    return Token(network, symbol, name, decimals, address, None, None, color, (symbol[:1] or "?").upper(), True, coingecko_id)
 
 
 def find_builtin(network: str, address: str) -> Token | None:
@@ -120,12 +122,16 @@ def find_builtin(network: str, address: str) -> Token | None:
     return None
 
 
-def tokens_for_mode(mode: str, custom: Iterable[Token] = ()) -> list[Token]:
+def tokens_for_mode(mode: str, custom: Iterable[Token] = (), hidden: Iterable[tuple[str, str]] = ()) -> list[Token]:
     """Token yang ditampilkan untuk sebuah mode, ditambah token kustom milik pengguna di jaringan mode itu.
 
     Bila `config.EXTENDED_TOKEN_LIST` dimatikan (False), token bawaan hanya koin native (ETH) di jaringan utama.
     """
-    everything = [t for net in MODES[mode] for t in TOKENS[net]]
+    hidden = set(hidden)   # pasangan (jaringan, alamat huruf kecil) token bawaan yang disembunyikan pengguna
+    everything = [
+        t for net in MODES[mode] for t in TOKENS[net]
+        if t.address is None or (t.network, t.address.lower()) not in hidden
+    ]
     if not config.EXTENDED_TOKEN_LIST:
         primary = MODES[mode][0]
         everything = [t for t in everything if t.is_native and t.network == primary]
@@ -133,7 +139,7 @@ def tokens_for_mode(mode: str, custom: Iterable[Token] = ()) -> list[Token]:
     return everything + extra
 
 
-def active_networks(mode: str, custom: Iterable[Token] = ()) -> list[Network]:
+def active_networks(mode: str, custom: Iterable[Token] = (), hidden: Iterable[tuple[str, str]] = ()) -> list[Network]:
     """Jaringan yang benar-benar punya token untuk ditampilkan/dimuat pada mode ini."""
-    used = {t.network for t in tokens_for_mode(mode, custom)}
+    used = {t.network for t in tokens_for_mode(mode, custom, hidden)}
     return [NETWORKS[k] for k in MODES[mode] if k in used]

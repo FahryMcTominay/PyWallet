@@ -5,7 +5,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from decimal import Decimal
-from typing import Sequence
+from typing import Iterable, Sequence
 
 from .history import HistoryService
 from .formatting import UNIT_ETH, UNIT_IDR, UNIT_USD
@@ -65,6 +65,8 @@ class Snapshot:
     eth_spark: list[float] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
     details: list[str] = field(default_factory=list)   # rincian teknis galat (untuk tooltip)
+    resolved_ids: dict[tuple[str, str], str] = field(default_factory=dict)   # (jaringan, alamat) -> ID koin CoinGecko baru
+    price_updates: dict[str, tuple[float, float | None, float]] = field(default_factory=dict)   # harga baru untuk disimpan
     fetched_at: float = field(default_factory=time.time)
 
     @property
@@ -146,12 +148,14 @@ class PortfolioService:
         """Baca nama/simbol/desimal token dari blockchain (untuk fitur tambah token)."""
         return fetch_token_info(self._rpc[network], address)
 
-    def load(self, address: str, mode: str, custom_tokens: Sequence[Token] = ()) -> Snapshot:
-        tokens = tokens_for_mode(mode, custom_tokens)
-        networks = active_networks(mode, custom_tokens)
+    def load(self, address: str, mode: str, custom_tokens: Sequence[Token] = (),
+             hidden: Iterable[tuple[str, str]] = (),
+             price_cache: dict[str, tuple[float, float | None, float]] | None = None) -> Snapshot:
+        tokens = tokens_for_mode(mode, custom_tokens, hidden)
+        networks = active_networks(mode, custom_tokens, hidden)
         symbols = {t.price_symbol for t in tokens if t.price_symbol} | {ETH_PRICE_SYMBOL}
 
-        with ThreadPoolExecutor(max_workers=len(networks) + 3) as pool:
+        with ThreadPoolExecutor(max_workers=2 * len(networks) + 3) as pool:
             bal_futures = {
                 net.key: pool.submit(
                     fetch_balances, self._rpc[net.key], address, [t for t in tokens if t.network == net.key]
@@ -159,6 +163,14 @@ class PortfolioService:
                 for net in networks
             }
             quotes_f = pool.submit(self.prices.quotes, symbols)
+            custom_f = {
+                net.key: pool.submit(
+                    self.prices.custom_quotes, net.coingecko_platform,
+                    [(t.address, t.coingecko_id) for t in tokens if t.custom and t.network == net.key and t.address],
+                    price_cache,
+                )
+                for net in networks if net.coingecko_platform
+            }
             idr_f = pool.submit(self.prices.usd_idr)
             spark_f = pool.submit(self.prices.sparkline, ETH_PRICE_SYMBOL)
 
@@ -166,6 +178,7 @@ class PortfolioService:
             for fut in bal_futures.values():
                 balances.update(fut.result())
             quotes: dict[str, Quote] = quotes_f.result()
+            custom_prices = {net: f.result() for net, f in custom_f.items()}
             usd_idr = idr_f.result()
             spark = spark_f.result()
 
@@ -186,6 +199,9 @@ class PortfolioService:
             raw = balances.get(t.key)
             amount = None if isinstance(raw, (RpcError, type(None))) else Decimal(raw).scaleb(-t.decimals)
             q = quotes.get(t.price_symbol) if t.price_symbol else None
+            if q is None and t.custom and t.address:       # token kustom: harga menurut contract address
+                cp = custom_prices.get(t.network)
+                q = cp.quotes.get(t.address.lower()) if cp else None
             if q is not None:
                 price, change = q.usd, q.change_pct
             elif t.peg_usd is not None:
@@ -194,6 +210,7 @@ class PortfolioService:
                 price, change = None, None
             rows.append(AssetRow(t, amount, price, change))
 
+        resolved = {(net, addr): cid for net, cp in custom_prices.items() for addr, cid in cp.resolved.items()}
         eth_q = quotes.get(ETH_PRICE_SYMBOL)
         return Snapshot(
             mode=mode,
@@ -205,4 +222,6 @@ class PortfolioService:
             eth_spark=spark,
             errors=errors,
             details=details,
+            resolved_ids=resolved,
+            price_updates={cid: v for cp in custom_prices.values() for cid, v in cp.fresh.items()},
         )

@@ -11,6 +11,7 @@ Dua tingkat akses:
 from __future__ import annotations
 
 import json
+import re
 import time
 import unicodedata
 from dataclasses import dataclass
@@ -324,10 +325,10 @@ class Vault:
     # ------------------------------------------------------------------
     def list_custom_tokens(self) -> list[Token]:
         rows = self.db.conn.execute(
-            "SELECT network, address, symbol, name, decimals FROM custom_tokens ORDER BY id"
+            "SELECT network, address, symbol, name, decimals, coingecko_id FROM custom_tokens ORDER BY id"
         ).fetchall()
         return [
-            make_custom_token(r["network"], r["address"], r["symbol"], r["name"], r["decimals"])
+            make_custom_token(r["network"], r["address"], r["symbol"], r["name"], r["decimals"], r["coingecko_id"])
             for r in rows
             if r["network"] in NETWORKS
         ]
@@ -361,6 +362,59 @@ class Vault:
             self.db.conn.execute(
                 "DELETE FROM custom_tokens WHERE network = ? AND address = ?", (network, address)
             )
+
+    def set_custom_coingecko_id(self, network: str, address: str, coin_id: str) -> None:
+        """Simpan ID koin CoinGecko token kustom (sudah diverifikasi lewat contract address saat dicari)."""
+        if not re.fullmatch(r"[a-z0-9][a-z0-9._-]{0,99}", coin_id or ""):
+            raise VaultError("ID koin tidak valid.")
+        with self.db.conn:
+            self.db.conn.execute(
+                "UPDATE custom_tokens SET coingecko_id = ? WHERE network = ? AND LOWER(address) = ?",
+                (coin_id, network, address.lower()),
+            )
+
+    # --- harga terakhir token kustom (cadangan bila CoinGecko sedang membatasi permintaan) ----------
+    def get_price_cache(self) -> dict[str, tuple[float, float | None, float]]:
+        try:
+            raw = json.loads(self.db.get_setting("price_cache", "{}") or "{}")
+            return {k: (float(v[0]), None if v[1] is None else float(v[1]), float(v[2])) for k, v in raw.items()}
+        except (ValueError, TypeError, IndexError, AttributeError):
+            return {}
+
+    def update_price_cache(self, updates: dict[str, tuple[float, float | None, float]]) -> None:
+        """Gabungkan harga baru ke cache; ID koin yang sudah bukan milik token kustom mana pun dibuang."""
+        if not updates:
+            return
+        current = self.get_price_cache()
+        current.update(updates)
+        keep = {t.coingecko_id for t in self.list_custom_tokens() if t.coingecko_id}
+        keep.update(updates)
+        current = {k: v for k, v in current.items() if k in keep}
+        self.db.set_setting("price_cache", json.dumps({k: list(v) for k, v in current.items()}))
+
+    # --- token bawaan yang disembunyikan (bukan dihapus dari kode: bisa ditampilkan lagi) ---------
+    def list_hidden_tokens(self) -> frozenset[tuple[str, str]]:
+        rows = self.db.conn.execute("SELECT network, address FROM hidden_tokens").fetchall()
+        return frozenset((r["network"], r["address"].lower()) for r in rows)
+
+    def hide_builtin_token(self, network: str, address: str) -> None:
+        builtin = find_builtin(network, address)
+        if builtin is None:
+            raise VaultError("Hanya token bawaan yang bisa disembunyikan. Token kustom dihapus saja.")
+        with self.db.conn:
+            self.db.conn.execute(
+                "INSERT OR IGNORE INTO hidden_tokens (network, address) VALUES (?, ?)", (network, address.lower())
+            )
+
+    def unhide_builtin_token(self, network: str, address: str) -> Token:
+        builtin = find_builtin(network, address)
+        if builtin is None:
+            raise VaultError("Bukan token bawaan.")
+        with self.db.conn:
+            self.db.conn.execute(
+                "DELETE FROM hidden_tokens WHERE network = ? AND address = ?", (network, address.lower())
+            )
+        return builtin
 
     # ------------------------------------------------------------------
     # Catatan transaksi keluar (riwayat lokal; riwayat lengkap diambil dari explorer)

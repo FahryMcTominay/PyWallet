@@ -19,6 +19,8 @@ class Network:
     badge_color: str   # warna lencana kecil di ikon token
     badge_text: str
     explorer: str = ""   # alamat dasar block explorer (untuk memeriksa token/transaksi)
+    pro_free: bool = True  # False = key gratis Blockscout PRO tidak mencakup jaringan ini (pakai API publik)
+    coingecko_platform: str = ""   # id platform CoinGecko untuk harga token menurut contract address ("" = tidak ada)
     history_api: str = ""  # API riwayat (format Etherscan: module=account&action=txlist), tanpa API key
 
 
@@ -36,6 +38,7 @@ NETWORKS: dict[str, Network] = {
         badge_color="#F5EEE9",
         badge_text="",
         explorer="https://etherscan.io",
+        coingecko_platform="ethereum",
         history_api="https://eth.blockscout.com/api",
     ),
     "base": Network(
@@ -51,7 +54,9 @@ NETWORKS: dict[str, Network] = {
         badge_color="#2F6BFF",
         badge_text="B",
         explorer="https://basescan.org",
+        coingecko_platform="base",
         history_api="https://base.blockscout.com/api",
+        pro_free=False,
     ),
     "sepolia": Network(
         key="sepolia",

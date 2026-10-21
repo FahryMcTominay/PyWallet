@@ -11,7 +11,7 @@ import sqlite3
 import sys
 from pathlib import Path
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 
 class Database:
@@ -98,6 +98,21 @@ class Database:
                 """
             )
             self.conn.execute("PRAGMA user_version = 4")
+            self.conn.commit()
+
+        if version < 5:
+            # v5: ID koin CoinGecko untuk token kustom (harga gabungan) + token bawaan yang disembunyikan pengguna
+            self.conn.executescript(
+                """
+                ALTER TABLE custom_tokens ADD COLUMN coingecko_id TEXT;
+                CREATE TABLE hidden_tokens (
+                    network TEXT NOT NULL,
+                    address TEXT NOT NULL,
+                    UNIQUE (network, address)
+                );
+                """
+            )
+            self.conn.execute("PRAGMA user_version = 5")
             self.conn.commit()
 
     # --- pengaturan -------------------------------------------------------
