@@ -173,7 +173,7 @@ def test_vault_tx_log_roundtrip(vault):
         vault.set_tx_status("sepolia", H1, "aneh")
 
 
-def test_old_database_is_migrated_to_v4(tmp_path):
+def test_old_database_is_migrated_to_latest(tmp_path):
     import sqlite3
     path = tmp_path / "old.db"
     conn = sqlite3.connect(path)
@@ -185,7 +185,7 @@ def test_old_database_is_migrated_to_v4(tmp_path):
     conn.commit()
     conn.close()
     db = Database(path)
-    assert db.conn.execute("PRAGMA user_version").fetchone()[0] == 4
+    assert db.conn.execute("PRAGMA user_version").fetchone()[0] == 5
     db.conn.execute("SELECT * FROM tx_log").fetchall()
 
 
@@ -437,3 +437,47 @@ def test_history_dialog_hints_about_api_key_on_429(qapp, tmp_path):
     dlg = HistoryDialog(v, svc, w, "testnet", run_in_thread=False)
     assert "API key" in dlg.status.text() and "429" in dlg.status.text()
     dlg.deleteLater()
+
+
+def test_base_stays_on_public_api_even_with_key_and_403_falls_back():
+    seen = []
+    ok = explorer({"txlist": [tx_row(H1, ME, OTHER, 1)], "tokentx": []})
+
+    def record(kind):
+        def handler(url, params):
+            seen.append((kind, url, params.get("apikey")))
+            return ok(url, params)
+        return handler
+
+    fake = FakeHttp()
+    fake.get_handlers[NETWORKS["base"].history_api] = record("base-public")
+    fake.get_handlers["https://api.blockscout.com/8453/api"] = record("base-pro")      # tidak boleh dipakai
+    PortfolioService(fake).history.load(ME, "mainnet", api_key="proapi_x")             # ethereum tak punya handler: gagal, abaikan
+    assert seen and all(kind == "base-public" and key is None for kind, _u, key in seen)
+
+    # Paket key menolak (403): otomatis jatuh ke API publik pada permintaan yang sama.
+    fake2 = FakeHttp()
+
+    def denied(url, params):
+        raise HttpError("https://api.blockscout.com/11155111/api?apikey=x: HTTP Error 403: Forbidden")
+
+    fake2.get_handlers["https://api.blockscout.com/11155111/api"] = denied
+    fake2.get_handlers[NETWORKS["sepolia"].history_api] = ok
+    res = PortfolioService(fake2).history.load(ME, "testnet", api_key="proapi_x")
+    assert [i.tx_hash for i in res.items] == [H1] and not res.errors
+
+
+def test_key_rejected_for_network_falls_back_to_public_api():
+    """Base tidak termasuk paket gratis Blockscout PRO: dengan key terpasang, riwayat Base tetap lewat API publik."""
+    ok = explorer({"txlist": [tx_row(H1, ME, OTHER, 1)], "tokentx": []})
+    fake = FakeHttp()
+
+    def pro(url, params):
+        raise HttpError("https://api.blockscout.com/8453/api?apikey=proapi_x: HTTP Error 402: Payment Required")
+
+    fake.get_handlers["https://api.blockscout.com/8453/api"] = pro
+    fake.get_handlers[NETWORKS["base"].history_api] = ok
+    fake.get_handlers["https://api.blockscout.com/1/api"] = lambda u, p: ok(u, p)
+    fake.get_handlers[NETWORKS["ethereum"].history_api] = ok
+    res = PortfolioService(fake).history.load(ME, "mainnet", api_key="proapi_x")
+    assert not res.errors and {i.network for i in res.items} == {"base", "ethereum"}

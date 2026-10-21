@@ -509,8 +509,9 @@ def test_lobby_shows_custom_token_and_detail_dialog(app, ready_vault, make_windo
     assert d.removed
 
     usdt = next(r for r in rows if r.row.token.symbol == "USDT")
-    d2 = TokenDetailDialog(usdt.row)                                 # token bawaan: alamat, tanpa tombol hapus
-    assert d2.addr_label.text() == "0xdAC17F958D2ee523a2206206994597C13D831ec7" and d2.remove_btn is None
+    d2 = TokenDetailDialog(usdt.row)                                 # token bawaan: alamat + tombol "sembunyikan"
+    assert d2.addr_label.text() == "0xdAC17F958D2ee523a2206206994597C13D831ec7"
+    assert d2.remove_btn.text() == "Sembunyikan dari daftar" and d2.yes_btn.text() == "Ya, sembunyikan"
 
     eth = AssetRow(TOKENS["ethereum"][0], Decimal(0), 3000.0, None)
     d3 = TokenDetailDialog(eth)                                      # ETH: penjelasan koin native
@@ -519,3 +520,30 @@ def test_lobby_shows_custom_token_and_detail_dialog(app, ready_vault, make_windo
     v.remove_custom_token("ethereum", mytoken)
     wt.reload_tokens()
     assert len(wt.findChildren(TokenRow)) == 10
+
+
+def test_main_window_hides_builtin_token_and_it_disappears_from_lobby(app, ready_vault, make_window, monkeypatch):
+    from pywallet.ui.pages import TokenRow
+    from pywallet.ui.token_dialogs import TokenDetailDialog
+
+    v = ready_vault
+    v.import_mnemonic("A", HARDHAT_MNEMONIC, PW)
+    fake, _service, _mytoken, _ = _token_env(v)
+    win = make_window(v, fake)
+    win.start()
+    win._enter_app()
+    wt = win.home.wallet_tab
+    wt.set_mode("mainnet")
+    rows = wt.findChildren(TokenRow)
+    usdt = next(r for r in rows if r.row.token.symbol == "USDT")
+    before = len(rows)
+
+    def accept_removal(self):          # meniru pengguna menekan "Ya, sembunyikan"
+        self.removed = True
+        return 1
+
+    monkeypatch.setattr(TokenDetailDialog, "exec", accept_removal)
+    win.show_token(usdt.row)
+    assert ("ethereum", usdt.row.token.address.lower()) in v.list_hidden_tokens()
+    after = wt.findChildren(TokenRow)
+    assert len(after) == before - 1 and not any(r.row.token.symbol == "USDT" for r in after)
