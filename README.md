@@ -15,7 +15,7 @@ python main.py
 
 Tes: `python -m pytest -q`. Data aplikasi: `%APPDATA%\PyWallet\` (database `pywallet.db` + folder `avatars`).
 
-## Fitur saat ini (v0.7.3)
+## Fitur saat ini (v0.8.1)
 
 | Fitur | Keterangan |
 |---|---|
@@ -44,8 +44,26 @@ Tombol **＋ Token** di lobi: pilih jaringan (Ethereum/Base di mainnet, Sepolia 
 lalu **Periksa**. Nama, simbol, dan desimal dibaca langsung dari blockchain (`rpc.fetch_token_info`). Sebelum
 menambahkan kamu wajib mencentang bahwa alamat sudah dicocokkan dengan sumber resmi; jika simbolnya sama dengan token
 bawaan tetapi alamatnya beda, muncul peringatan token palsu. Token kustom tersimpan di database lokal (tabel
-`custom_tokens`, skema v3), berlaku untuk semua wallet, bertanda "Kustom", dan tidak punya harga (agar token palsu
-tidak bisa meminjam harga token asli).
+`custom_tokens`, skema v3), berlaku untuk semua wallet, dan bertanda "Kustom".
+
+**Harga token kustom** (mainnet saja) diambil dari **CoinGecko menurut contract address**, bukan menurut simbol
+(`PriceService.custom_quotes`). Pertama kali, aplikasi mencari **ID koin** CoinGecko dari alamat kontrak dan hanya
+menerimanya bila CoinGecko mengakui alamat itu sebagai milik koin tersebut di platform yang sama; ID disimpan di
+database (`custom_tokens.coingecko_id`, skema v5). Sesudahnya semua token kustom diperbarui lewat **satu permintaan
+gabungan** (`simple/price?ids=...`), sehingga banyak token tidak mengancam batas laju API gratis. Token tiruan
+bersimbol sama tetapi beralamat lain tidak diakui CoinGecko, jadi tidak pernah meminjam harga token asli. Token yang
+tidak terdaftar atau di testnet tetap tanpa harga. Ketahanan terhadap batas laju API gratis:
+- Pencarian ID dibatasi 3 per muat ulang dan berhenti seketika bila kena 429 (istirahat 60 detik). Hanya jawaban
+  404 yang dianggap "tidak terdaftar" (diingat 10 menit); 429/timeout tidak pernah dianggap begitu.
+- ID koin dan harga terakhir **disimpan di database** segera setelah ditemukan, bahkan bila hasil muat itu sudah
+  usang. Jadi setelah login ulang, harga dari database (maks. 24 jam) tetap tampil bila CoinGecko sedang menolak.
+- Harga di-cache 1 menit di memori; bila respons gagal atau tidak memuat sebuah token, harga lamanya dipertahankan.
+
+**Hapus / sembunyikan token.** Klik baris token lalu tombol di bawah: token kustom **dihapus** dari daftar, token
+bawaan **disembunyikan** (tabel `hidden_tokens`; tidak dihapus dari kode). Koin native (ETH) selalu tampil karena
+dipakai untuk biaya gas. Token bawaan yang disembunyikan ditampilkan lagi lewat **＋ Token** dengan memasukkan contract
+address-nya (tanpa perlu centang verifikasi, harganya tetap dari Binance seperti semula). Token yang disembunyikan
+tidak muncul di lobi maupun pilihan Kirim; saldonya di blockchain tidak berubah.
 
 Klik baris token mana pun untuk melihat **detail**: saldo, jaringan, **contract address** (salin / buka di explorer),
 dan tombol hapus untuk token kustom. ETH dijelaskan sebagai koin native yang memang tidak punya contract address.
@@ -90,7 +108,8 @@ berhasil, data lama tetap ditampilkan. Pesan galat menyertakan alasannya.
 `dev.blockscout.com` (tanpa kartu kredit); satu key **Blockscout PRO** berlaku untuk Ethereum, Base, dan Sepolia dan
 batas lajunya jauh lebih longgar. Key divalidasi (huruf/angka/`_`/`-`), hanya dikirim ke `api.blockscout.com`,
 disimpan di database lokal tanpa enkripsi (bukan kunci wallet; tidak bisa menggerakkan dana), dan otomatis
-disamarkan di pesan galat. Tanpa key, aplikasi tetap memakai API publik. Tab Profil kini bisa digulir. Alamat endpoint belum diuji dari lingkungan pengembangan (tanpa internet); bila ada yang
+disamarkan di pesan galat. Tanpa key, aplikasi tetap memakai API publik. Tab Profil kini bisa digulir. Jika key ditolak untuk sebuah jaringan (mis. Base, yang tidak lagi termasuk
+paket gratis Blockscout PRO), riwayat jaringan itu otomatis dicoba lewat API publik tanpa key. Alamat endpoint belum diuji dari lingkungan pengembangan (tanpa internet); bila ada yang
 berubah, cukup ubah `history_api`.
 
 ### Daftar token mainnet
@@ -128,7 +147,7 @@ dan penjelasan bagaimana Kirim/Swap nanti berinteraksi dengan blockchain.
 main.py                    titik masuk
 pywallet/
   config.py                konstanta, lokasi data, saklar EXTENDED_TOKEN_LIST
-  crypto.py, db.py         enkripsi, SQLite (skema v4: avatar, token kustom, tx_log)
+  crypto.py, db.py         enkripsi, SQLite (skema v5: avatar, token kustom, tx_log, hidden_tokens)
   wallet_core.py, vault.py akun EVM, master password, CRUD wallet, preferensi
   avatars.py               impor foto profil
   networks.py, tokens.py   jaringan & token
