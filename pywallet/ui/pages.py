@@ -579,13 +579,15 @@ class WalletTab(QWidget):
         self._request_id += 1
         rid, address, mode = self._request_id, wallet.address, self.mode
         custom = self.vault.list_custom_tokens()   # dibaca di thread utama (SQLite), lalu dipakai di thread kerja
+        hidden = self.vault.list_hidden_tokens()
+        price_cache = self.vault.get_price_cache()
         self._loading = True
         self.status.setText("Memuat…")
         self.status.setStyleSheet(f"color: {theme.MUTED}; font-size: 12px;")
 
         def work() -> None:
             try:
-                result = self.service.load(address, mode, custom)
+                result = self.service.load(address, mode, custom, hidden, price_cache)
             except Exception as exc:  # noqa: BLE001 - apa pun yang gagal tidak boleh menjatuhkan UI
                 result = exc
             try:
@@ -598,7 +600,20 @@ class WalletTab(QWidget):
         else:
             work()
 
+    def _persist_discoveries(self, result) -> None:
+        """Simpan ID koin dan harga yang baru ditemukan. Dilakukan SEBELUM memeriksa apakah hasilnya kedaluwarsa:
+        hasil yang terpakai-buang pun sudah menghabiskan kuota API, jadi temuannya jangan sampai hilang."""
+        for (network, addr), coin_id in result.resolved_ids.items():
+            try:
+                self.vault.set_custom_coingecko_id(network, addr, coin_id)
+            except VaultError:
+                pass
+        if result.price_updates:
+            self.vault.update_price_cache(result.price_updates)
+
     def _on_loaded(self, rid: int, result) -> None:
+        if not isinstance(result, Exception):
+            self._persist_discoveries(result)
         if rid != self._request_id:
             return   # hasil kedaluwarsa (wallet/mode sudah berganti)
         self._loading = False
@@ -630,7 +645,7 @@ class WalletTab(QWidget):
     def _open_mode_menu(self) -> None:
         menu = QMenu(self)
         for mode in (MODE_MAINNET, MODE_TESTNET):
-            detail = ", ".join(n.name for n in active_networks(mode))
+            detail = ", ".join(n.name for n in active_networks(mode, (), ()))
             act = menu.addAction(f"{MODE_LABELS[mode]}   ·   {detail}")
             act.setCheckable(True)
             act.setChecked(mode == self.mode)
@@ -735,7 +750,7 @@ class WalletTab(QWidget):
                 w.setParent(None)      # langsung lepas agar tidak tampil ganda sebelum benar-benar dihapus
                 w.deleteLater()
         rows = snap.rows if snap else sort_assets(
-            [AssetRow(t, None, None, None) for t in tokens_for_mode(self.mode, self.vault.list_custom_tokens())]
+            [AssetRow(t, None, None, None) for t in tokens_for_mode(self.mode, self.vault.list_custom_tokens(), self.vault.list_hidden_tokens())]
         )
         held = [r for r in rows if r.has_balance]
         rest = [r for r in rows if not r.has_balance]

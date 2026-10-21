@@ -41,6 +41,7 @@ class AddTokenDialog(BaseDialog):
         self.added: Token | None = None
         self.run_in_thread = True            # tes mematikannya agar tidak perlu menunggu thread
         self._info: TokenInfo | None = None
+        self._restore: Token | None = None     # token bawaan yang tadinya disembunyikan dan sekarang ditampilkan lagi
         self._rid = 0
         self._networks = networks_for_mode(mode)
         self._network = self._networks[0].key
@@ -135,6 +136,8 @@ class AddTokenDialog(BaseDialog):
     def _reset_preview(self, *_args) -> None:
         self._rid += 1                      # hasil permintaan lama diabaikan
         self._info = None
+        self._restore = None
+        self.add_btn.setText("Tambahkan")
         self.preview.hide()
         self.warn.hide()
         self.confirm.hide()
@@ -144,7 +147,7 @@ class AddTokenDialog(BaseDialog):
         self._refresh()
 
     def _refresh(self, *_args) -> None:
-        self.add_btn.setEnabled(self._info is not None and self.confirm.isChecked())
+        self.add_btn.setEnabled(self._info is not None and (self._restore is not None or self.confirm.isChecked()))
 
     # --- langkah 1: periksa ---------------------------------------------------------------------
     def check(self) -> None:
@@ -156,7 +159,12 @@ class AddTokenDialog(BaseDialog):
             return
         builtin = find_builtin(self._network, address)
         if builtin is not None:
-            self.show_error(self.err, f"{builtin.symbol} sudah ada di daftar bawaan jaringan ini.")
+            if (self._network, address.lower()) in self.vault.list_hidden_tokens():
+                # Token bawaan yang pernah disembunyikan: tampilkan lagi (data dari daftar bawaan, bukan dari jaringan).
+                self._restore = builtin
+                self._on_fetched(self._rid, TokenInfo(address, builtin.name, builtin.symbol, builtin.decimals))
+                return
+            self.show_error(self.err, f"{builtin.symbol} sudah ada di daftar jaringan ini.")
             return
         if any(t.network == self._network and t.address == address for t in self.vault.list_custom_tokens()):
             self.show_error(self.err, "Token ini sudah ada di daftarmu.")
@@ -200,13 +208,19 @@ class AddTokenDialog(BaseDialog):
             t for t in TOKENS[self._network]
             if t.symbol.lower() == result.symbol.lower() and (t.address or "") != result.address
         ]
-        if lookalike:
+        if lookalike and self._restore is None:
             self.warn.setText(
                 f"Peringatan: simbol “{result.symbol}” sama dengan {lookalike[0].name} bawaan, tetapi alamatnya "
                 f"berbeda. Ini bisa token palsu. Lanjutkan hanya jika kamu yakin."
             )
             self.warn.show()
-        self.confirm.show()
+        if self._restore is not None:
+            self.warn.hide()
+            self.warn.setText("")
+            self.add_btn.setText("Tampilkan lagi")
+            self.preview.setText(self.preview.text() + "\n\nToken bawaan aplikasi yang tadinya kamu sembunyikan.")
+        else:
+            self.confirm.show()
         self._refresh()
         self.adjustSize()
 
@@ -215,6 +229,11 @@ class AddTokenDialog(BaseDialog):
         if not self.add_btn.isEnabled() or self._info is None:
             return
         info = self._info
+        if self._restore is not None:
+            self.vault.unhide_builtin_token(self._network, info.address)
+            self.added = self._restore
+            self.accept()
+            return
         try:
             self.added = self.vault.add_custom_token(
                 self._network, info.address, info.symbol, info.name, info.decimals
@@ -291,32 +310,31 @@ class TokenDetailDialog(BaseDialog):
 
         self.remove_btn = None
         self.confirm_box = None
-        if t.custom:
-            self.remove_btn = button("Hapus dari daftar", "danger")
-            self.remove_btn.clicked.connect(self._ask_remove)
-            self.root.addLayout(self.button_row(self.remove_btn, copy_btn, self.explorer_btn))
-            self.confirm_box = QWidget()
-            cl = QVBoxLayout(self.confirm_box)
-            cl.setContentsMargins(0, 0, 0, 0)
-            cl.setSpacing(10)
-            cl.addWidget(
-                label(
-                    "Hapus token ini dari daftar? Saldomu di blockchain tidak berubah; kamu bisa menambahkannya "
-                    "lagi kapan saja dengan contract address yang sama.",
-                    "warnbox",
-                    wrap=True,
-                )
+        # Semua token non-native bisa dihapus (kustom) atau disembunyikan (bawaan).
+        self.remove_btn = button("Hapus dari daftar" if t.custom else "Sembunyikan dari daftar", "danger")
+        self.remove_btn.clicked.connect(self._ask_remove)
+        self.root.addLayout(self.button_row(self.remove_btn, copy_btn, self.explorer_btn))
+        self.confirm_box = QWidget()
+        cl = QVBoxLayout(self.confirm_box)
+        cl.setContentsMargins(0, 0, 0, 0)
+        cl.setSpacing(10)
+        cl.addWidget(
+            label(
+                ("Hapus token ini dari daftar? " if t.custom else "Sembunyikan token ini dari daftar? ")
+                + "Saldomu di blockchain tidak berubah; kamu bisa menambahkannya lagi kapan saja lewat tombol "
+                "＋ Token dengan contract address yang sama.",
+                "warnbox",
+                wrap=True,
             )
-            no = button("Batal")
-            self.yes_btn = button("Ya, hapus", "dangerSolid")
-            no.clicked.connect(self._cancel_remove)
-            self.yes_btn.clicked.connect(self._do_remove)
-            cl.addLayout(self.button_row(no, self.yes_btn))
-            self.confirm_box.hide()
-            self.root.addWidget(self.confirm_box)
-            self.root.addLayout(self.button_row(close))
-        else:
-            self.root.addLayout(self.button_row(close, copy_btn, self.explorer_btn))
+        )
+        no = button("Batal")
+        self.yes_btn = button("Ya, hapus" if t.custom else "Ya, sembunyikan", "dangerSolid")
+        no.clicked.connect(self._cancel_remove)
+        self.yes_btn.clicked.connect(self._do_remove)
+        cl.addLayout(self.button_row(no, self.yes_btn))
+        self.confirm_box.hide()
+        self.root.addWidget(self.confirm_box)
+        self.root.addLayout(self.button_row(close))
 
     def _ask_remove(self) -> None:
         self.remove_btn.hide()

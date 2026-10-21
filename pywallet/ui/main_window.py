@@ -246,7 +246,10 @@ class MainWindow(QMainWindow):
         accepted = dlg.exec() and dlg.removed
         dlg.deleteLater()
         if accepted:
-            self.vault.remove_custom_token(row.token.network, row.token.address)
+            if row.token.custom:
+                self.vault.remove_custom_token(row.token.network, row.token.address)
+            else:
+                self.vault.hide_builtin_token(row.token.network, row.token.address)
             self.home.wallet_tab.reload_tokens()
 
     def toggle_decor(self) -> None:

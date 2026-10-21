@@ -196,7 +196,11 @@ class HistoryService:
             try:
                 return self._query_once(network, action, address, api_key)
             except HttpError as exc:
-                if delay is None or not _is_rate_limit(str(exc)):
+                text = str(exc)
+                if api_key and any(code in text for code in ("401", "402", "403")):
+                    api_key = ""             # paket key tidak mencakup jaringan ini: pakai API publik saja
+                    continue
+                if delay is None or not _is_rate_limit(text):
                     raise
                 self._sleep(delay)
         raise HttpError("tidak mungkin tercapai")   # pragma: no cover
@@ -206,7 +210,7 @@ class HistoryService:
         net = NETWORKS[network]
         params = {"module": "account", "action": action, "address": address, "sort": "desc",
                   "page": "1", "offset": str(PAGE_SIZE)}
-        if api_key:                                   # key hanya dikirim ke api.blockscout.com (https)
+        if api_key and net.pro_free:                  # key hanya dikirim ke api.blockscout.com (https)
             base = PRO_API_URL.format(chain_id=net.chain_id)
             params["apikey"] = api_key
         else:

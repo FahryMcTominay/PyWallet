@@ -240,8 +240,8 @@ class ApiKeyDialog(BaseDialog):
         self.root.addWidget(
             label(
                 "Tanpa key, riwayat memakai API publik yang batas permintaannya ketat (galat 429). Dengan key gratis "
-                "dari Blockscout PRO (dev.blockscout.com, tanpa kartu kredit), satu key berlaku untuk Ethereum, Base, "
-                "dan Sepolia.",
+                "dari Blockscout PRO (dev.blockscout.com, tanpa kartu kredit), satu key berlaku untuk Ethereum dan "
+                "Sepolia. Base tidak masuk paket gratis, jadi riwayat Base tetap lewat API publik.",
                 "muted",
                 wrap=True,
             )
