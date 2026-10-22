@@ -1,7 +1,7 @@
 """Jendela utama: mengatur alur setup -> unlock -> lobi dan menjalankan dialog CRUD."""
 from __future__ import annotations
 
-from PySide6.QtCore import QTimer
+from PySide6.QtCore import QEasingCurve, QEvent, QPoint, QPropertyAnimation, QTimer
 from PySide6.QtWidgets import (
     QFileDialog,
     QHBoxLayout,
@@ -35,6 +35,73 @@ from .token_dialogs import AddTokenDialog, TokenDetailDialog
 PAGE_SETUP, PAGE_UNLOCK, PAGE_EMPTY, PAGE_HOME = range(4)
 
 
+class ScreenHost(QWidget):
+    """Lapisan di atas halaman utama untuk layar fitur (Kirim, Riwayat, dst.). Menutupi seluruh area, termasuk menu bawah."""
+
+    DURATION_MS = 260
+
+    def __init__(self, parent: QWidget):
+        super().__init__(parent)
+        self.setAutoFillBackground(False)
+        self.screen: QWidget | None = None
+        self._anim: QPropertyAnimation | None = None
+        parent.installEventFilter(self)
+        self.hide()
+
+    def eventFilter(self, obj, event) -> bool:
+        if obj is self.parent() and event.type() == QEvent.Type.Resize and self.screen is not None:
+            self.setGeometry(self.parent().rect())
+        return False
+
+    def push(self, screen: QWidget) -> None:
+        self.pop()
+        self.screen = screen
+        screen.setParent(self)
+        self.setGeometry(self.parent().rect())
+        screen.setGeometry(self.rect())
+        lay = self.layout()
+        if lay is None:
+            from PySide6.QtWidgets import QVBoxLayout
+            lay = QVBoxLayout(self)
+            lay.setContentsMargins(0, 0, 0, 0)
+        lay.addWidget(screen)
+        self.show()
+        self.raise_()
+        screen.show()
+        if self.isVisible() and self.window().isVisible():
+            # Geser masuk dari kanan; tata letak ditahan agar posisi animasi tidak ditimpa.
+            self.layout().setEnabled(False)
+            screen.setGeometry(self.width(), 0, self.width(), self.height())
+            anim = QPropertyAnimation(screen, b"pos", self)
+            anim.setDuration(self.DURATION_MS)
+            anim.setStartValue(QPoint(self.width(), 0))
+            anim.setEndValue(QPoint(0, 0))
+            anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+            anim.finished.connect(self._settle)
+            self._anim = anim
+            anim.start()
+        screen.setFocus()
+
+    def _settle(self) -> None:
+        if self.layout() is not None:
+            self.layout().setEnabled(True)
+            self.layout().activate()
+        self._anim = None
+
+    def pop(self) -> None:
+        if self._anim is not None:
+            self._anim.stop()
+            self._anim = None
+            if self.layout() is not None:
+                self.layout().setEnabled(True)
+        if self.screen is not None:
+            scr, self.screen = self.screen, None
+            scr.hide()
+            scr.setParent(None)
+            scr.deleteLater()
+        self.hide()
+
+
 class MainWindow(QMainWindow):
     def __init__(
         self,
@@ -60,6 +127,7 @@ class MainWindow(QMainWindow):
         self.home.wallet_tab.run_in_thread = async_loading
 
         self.stack = QStackedWidget()
+        self.screens = ScreenHost(self.stack)
         for page in (self.setup_page, self.unlock_page, self.empty_page, self.home):
             self.stack.addWidget(page)
 
@@ -117,6 +185,7 @@ class MainWindow(QMainWindow):
             self._show_unlock()
 
     def _show_unlock(self) -> None:
+        self.close_screen()
         self._unlocked = False
         self.stack.setCurrentIndex(PAGE_UNLOCK)
         self.unlock_page.focus_input()
@@ -232,25 +301,39 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
     # Token
     # ------------------------------------------------------------------
+    # ------------------------------------------------------------------
+    # Layar fitur (di dalam jendela utama, bukan jendela baru)
+    # ------------------------------------------------------------------
+    def open_screen(self, screen, on_done=None) -> None:
+        """Tampilkan `screen` menutupi halaman utama; saat selesai, layar ditutup lalu `on_done(kode)` dipanggil."""
+        def finished(code: int) -> None:
+            if self.screens.screen is screen:
+                self.screens.pop()
+            if on_done is not None:
+                on_done(code)
+        screen.finished.connect(finished)
+        self.screens.push(screen)
+
+    def close_screen(self) -> None:
+        self.screens.pop()
+
     def add_token(self) -> None:
         wt = self.home.wallet_tab
         dlg = AddTokenDialog(self.vault, wt.service, wt.mode, self)
         dlg.run_in_thread = wt.run_in_thread
-        accepted = dlg.exec() and dlg.added is not None
-        dlg.deleteLater()                    # dialog sekali pakai: lepaskan setelah ditutup
-        if accepted:
-            wt.reload_tokens()
+        self.open_screen(dlg, lambda code: wt.reload_tokens() if code and dlg.added is not None else None)
 
     def show_token(self, row) -> None:
         dlg = TokenDetailDialog(row, self)
-        accepted = dlg.exec() and dlg.removed
-        dlg.deleteLater()
-        if accepted:
-            if row.token.custom:
-                self.vault.remove_custom_token(row.token.network, row.token.address)
-            else:
-                self.vault.hide_builtin_token(row.token.network, row.token.address)
-            self.home.wallet_tab.reload_tokens()
+
+        def done(code: int) -> None:
+            if code and dlg.removed:
+                if row.token.custom:
+                    self.vault.remove_custom_token(row.token.network, row.token.address)
+                else:
+                    self.vault.hide_builtin_token(row.token.network, row.token.address)
+                self.home.wallet_tab.reload_tokens()
+        self.open_screen(dlg, done)
 
     def toggle_decor(self) -> None:
         on = not decor.ENABLED
@@ -272,17 +355,11 @@ class MainWindow(QMainWindow):
             return
         dlg = SendDialog(self.vault, wt.service, wallet, snap.rows, self)
         dlg.run_in_thread = wt.run_in_thread
-        dlg.exec()
-        sent = dlg.sent_hash is not None
-        dlg.deleteLater()
-        if sent:
-            wt.reload_tokens()               # muat ulang saldo setelah transaksi dikirim
+        self.open_screen(dlg, lambda code: wt.reload_tokens() if dlg.sent_hash is not None else None)
 
     def set_api_key(self) -> None:
         dlg = ApiKeyDialog(self.vault, self)
-        dlg.exec()
-        dlg.deleteLater()
-        self.home.profile_tab.refresh()
+        self.open_screen(dlg, lambda code: self.home.profile_tab.refresh())
 
     def show_history(self) -> None:
         wallet = self.vault.get_active_wallet()
@@ -290,17 +367,17 @@ class MainWindow(QMainWindow):
             return
         wt = self.home.wallet_tab
         dlg = HistoryDialog(self.vault, wt.service, wallet, wt.mode, self, run_in_thread=wt.run_in_thread)
-        dlg.exec()
-        dlg.deleteLater()
+        self.open_screen(dlg)
 
     def receive(self) -> None:
         wallet = self.vault.get_active_wallet()
         if wallet:
             mode = self.home.wallet_tab.mode
             names = ", ".join(n.name for n in active_networks(mode))
-            ReceiveDialog(wallet, f"{names} ({MODE_LABELS[mode]})", self).exec()
+            self.open_screen(ReceiveDialog(wallet, f"{names} ({MODE_LABELS[mode]})", self))
 
     def lock_app(self) -> None:
+        self.close_screen()
         self.vault.lock_now()
         self._show_unlock()
 

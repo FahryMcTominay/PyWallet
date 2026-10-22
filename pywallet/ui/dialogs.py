@@ -4,17 +4,20 @@ from __future__ import annotations
 import random
 from typing import Callable
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import (
     QButtonGroup,
     QCheckBox,
     QDialog,
+    QFrame,
     QGridLayout,
     QHBoxLayout,
     QLineEdit,
     QPlainTextEdit,
     QPushButton,
+    QScrollArea,
     QStackedWidget,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -31,6 +34,7 @@ from ..vault import (
     validate_name,
 )
 from ..wallet_core import InvalidSecret
+from . import theme
 from .widgets import PasswordField, QRWidget, copy_to_clipboard, label
 
 USER_ERRORS = (VaultError, InvalidSecret)
@@ -44,22 +48,8 @@ def button(text: str, name: str | None = None) -> QPushButton:
     return b
 
 
-class BaseDialog(QDialog):
-    def __init__(self, title: str, parent: QWidget | None = None, width: int = 440):
-        super().__init__(parent)
-        self.setWindowTitle(title)
-        self.setModal(True)
-        self.setMinimumWidth(width)
-        self.root = QVBoxLayout(self)
-        self.root.setContentsMargins(26, 24, 26, 22)
-        self.root.setSpacing(14)
-
-    def showEvent(self, event) -> None:
-        super().showEvent(event)
-        # Pastikan tinggi cukup untuk teks yang membungkus baris (hindari teks terpotong).
-        needed = self.layout().totalHeightForWidth(self.width())
-        if needed > self.height():
-            self.resize(self.width(), needed)
+class _Helpers:
+    """Pembantu kecil yang dipakai bersama oleh dialog (BaseDialog) dan layar penuh (ScreenBase)."""
 
     @staticmethod
     def error_label() -> QWidget:
@@ -80,6 +70,132 @@ class BaseDialog(QDialog):
         for b in buttons:
             row.addWidget(b)
         return row
+
+
+class BaseDialog(_Helpers, QDialog):
+    """Jendela dialog kecil (modal). Dipakai untuk kotak singkat: password, ganti nama, konfirmasi."""
+
+    def __init__(self, title: str, parent: QWidget | None = None, width: int = 440):
+        super().__init__(parent)
+        self.setWindowTitle(title)
+        self.setModal(True)
+        self.setMinimumWidth(width)
+        self.root = QVBoxLayout(self)
+        self.root.setContentsMargins(26, 24, 26, 22)
+        self.root.setSpacing(14)
+
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        # Pastikan tinggi cukup untuk teks yang membungkus baris (hindari teks terpotong).
+        needed = self.layout().totalHeightForWidth(self.width())
+        if needed > self.height():
+            self.resize(self.width(), needed)
+
+    def fit_to_content(self) -> None:
+        """Sesuaikan tinggi dengan isi (dipanggil saat isi berubah, mis. pindah halaman)."""
+        if self.isVisible():
+            self.resize(self.width(), 1)
+            self.adjustSize()
+
+
+class ScreenBase(_Helpers, QWidget):
+    """Layar penuh di dalam jendela utama (bukan jendela baru): bilah atas dengan tombol ← lalu isi yang bisa digulir.
+
+    API-nya sengaja mirip dialog (`root`, `accept`, `reject`, `done`) supaya isi layar tidak perlu ditulis ulang.
+    Bedanya tidak ada `exec()`: layar dibuka lewat `MainWindow.open_screen`, dan sinyal `finished(kode)` dipancarkan
+    saat layar selesai (kode 1 = diterima, 0 = dibatalkan).
+    """
+
+    finished = Signal(int)
+
+    def __init__(self, title: str, parent: QWidget | None = None, width: int = 0, scroll: bool = True):
+        super().__init__(parent)
+        self.setObjectName("screen")
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.setStyleSheet(f"QWidget#screen {{ background: {theme.BG}; }}")
+        self.screen_title = title
+        self._finished = False
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+
+        header = QWidget()
+        header.setObjectName("screenHeader")
+        header.setStyleSheet(
+            f"QWidget#screenHeader {{ background: {theme.SURFACE}; border-bottom: 1px solid {theme.LINE}; }}"
+        )
+        hl = QHBoxLayout(header)
+        hl.setContentsMargins(10, 8, 18, 8)
+        hl.setSpacing(6)
+        self.back_btn = QToolButton()
+        self.back_btn.setText("←")
+        self.back_btn.setToolTip("Kembali")
+        self.back_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.back_btn.setFixedSize(40, 40)
+        self.back_btn.setStyleSheet(
+            f"QToolButton {{ color: {theme.TEXT_STRONG}; font-size: 22px; background: transparent; border-radius: 20px; }}"
+            f"QToolButton:hover {{ background: {theme.SURFACE_HI}; }}"
+        )
+        self.back_btn.clicked.connect(self.go_back)
+        hl.addWidget(self.back_btn)
+        self.title_lbl = label(title)
+        self.title_lbl.setStyleSheet(
+            f"color: {theme.TEXT_STRONG}; font-size: 17px; font-weight: 700; background: transparent;"
+        )
+        hl.addWidget(self.title_lbl, 1)
+        outer.addWidget(header)
+
+        content = QWidget()
+        inner = QWidget()
+        self.root = QVBoxLayout(inner)
+        self.root.setContentsMargins(22, 18, 22, 22)
+        self.root.setSpacing(14)
+        cl = QVBoxLayout(content)
+        cl.setContentsMargins(0, 0, 0, 0)
+        cl.setSpacing(0)
+        cl.addWidget(inner, 0 if scroll else 1)      # layar yang bisa digulir: isi setinggi kebutuhannya, sisa kosong di bawah
+        if scroll:
+            cl.addStretch(1)
+        if scroll:
+            area = QScrollArea()
+            area.setWidgetResizable(True)
+            area.setFrameShape(QFrame.Shape.NoFrame)
+            area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+            area.setStyleSheet("QScrollArea, QScrollArea > QWidget > QWidget { background: transparent; }")
+            area.setWidget(content)
+            outer.addWidget(area, 1)
+        else:
+            outer.addWidget(content, 1)
+
+    # --- siklus hidup -------------------------------------------------------------------------
+    def go_back(self) -> None:
+        """Tombol ← / tombol Esc. Layar bertahap bisa menggantinya (mis. Kirim kembali ke form dulu)."""
+        self.reject()
+
+    def done(self, result: int) -> None:
+        if self._finished:
+            return
+        self._finished = True
+        self.finished.emit(result)
+
+    def accept(self) -> None:
+        self.done(1)
+
+    def reject(self) -> None:
+        self.done(0)
+
+    def keyPressEvent(self, event) -> None:
+        if event.key() == Qt.Key.Key_Escape:
+            self.go_back()
+            return
+        super().keyPressEvent(event)
+
+    # Tinggi layar ditentukan oleh jendela utama, bukan isinya; pemanggilan lama (dari versi dialog) diabaikan.
+    def adjustSize(self) -> None:
+        self.updateGeometry()
+
+    def fit_to_content(self) -> None:
+        self.updateGeometry()
 
 
 def word_grid(words: list[str], columns: int = 3) -> QWidget:
@@ -553,7 +669,7 @@ class DeleteWalletDialog(BaseDialog):
 # ==========================================================================
 # Terima
 # ==========================================================================
-class ReceiveDialog(BaseDialog):
+class ReceiveDialog(ScreenBase):
     def __init__(self, wallet: WalletRecord, network_label: str, parent: QWidget | None = None):
         super().__init__("Terima", parent, 420)
         title = label(f"Terima ke “{wallet.name}”", "heading")
