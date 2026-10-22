@@ -15,7 +15,12 @@ python main.py
 
 Tes: `python -m pytest -q`. Data aplikasi: `%APPDATA%\PyWallet\` (database `pywallet.db` + folder `avatars`).
 
-## Fitur saat ini (v0.8.1)
+## Fitur saat ini (v0.9.1)
+
+> **Layar, bukan jendela baru (v0.9.0):** Kirim, Terima, Riwayat, Tambah Token, Detail Token, dan API key kini terbuka
+> sebagai layar penuh di dalam jendela utama (geser masuk dari kanan, tombol **←** atau **Esc** untuk kembali, menu
+> bawah tersembunyi). Kotak kecil (password, ganti nama, konfirmasi hapus) tetap berupa dialog. Kode: `ScreenBase`
+> (`ui/dialogs.py`) dan `ScreenHost` + `MainWindow.open_screen` (`ui/main_window.py`).
 
 | Fitur | Keterangan |
 |---|---|
@@ -70,7 +75,7 @@ dan tombol hapus untuk token kustom. ETH dijelaskan sebagai koin native yang mem
 
 ### Kirim aset
 
-Tombol **Kirim** di lobi (butuh aset bersaldo di mode yang sedang aktif). Alurnya tiga layar dalam satu dialog:
+Tombol **Kirim** di lobi (butuh aset bersaldo di mode yang sedang aktif). Alurnya tiga langkah dalam satu layar:
 **form** (aset, alamat tujuan, jumlah) -> **tinjau** (ringkasan lengkap, pilihan kecepatan, master password) ->
 **status** (hash transaksi, lalu menunggu masuk blok). Rincian teknis ada di `pywallet/tx.py` dan `ui/send_dialog.py`.
 
@@ -89,7 +94,7 @@ Uji dulu di **Testnet (Sepolia)** dengan ETH uji dari faucet. Saldo dimuat ulang
 
 ### Riwayat transaksi
 
-Dialog **Riwayat** (`ui/history_dialog.py`, logikanya di `pywallet/history.py`) menggabungkan dua sumber:
+Layar **Riwayat** (`ui/history_dialog.py`, logikanya di `pywallet/history.py`) menggabungkan dua sumber:
 1. **API explorer** berformat Etherscan (`txlist` dan `tokentx`). Bawaannya instance **Blockscout publik** tiap jaringan
    (`Network.history_api` di `networks.py`), **tanpa API key**. Ethereum dan Base dipilih karena API gratis Etherscan
    tidak lagi mencakup Base; format yang sama bisa dipakai Etherscan jika kelak ingin diganti.

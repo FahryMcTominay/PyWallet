@@ -64,7 +64,7 @@ dites tanpa layar (`tests/test_vault.py`), dan kamu bisa mengubah tampilan tanpa
 | `ui/pages.py` | Halaman-halaman (login, lobi, swap, profil, navigasi bawah) |
 | `ui/history_dialog.py` | Dialog Riwayat: daftar transaksi, status, klik untuk buka explorer |
 | `ui/send_dialog.py` | Dialog Kirim: form -> tinjau + password -> status transaksi |
-| `ui/dialogs.py` | Kotak dialog (password, buat wallet, impor, ganti nama, hapus, terima) |
+| `ui/dialogs.py` | Kotak dialog kecil (password, buat wallet, impor, ganti nama, hapus) + `ScreenBase`, kerangka layar penuh dengan tombol ← |
 | `ui/widgets.py` | Komponen kecil yang dipakai ulang (avatar, kartu, tombol bulat, QR, animasi geser) |
 | `ui/theme.py` | Semua warna dan gaya (QSS, mirip CSS) |
 | `ui/decor.py` | Motif latar (pita, kucing, bintang) yang digambar lewat kode |
