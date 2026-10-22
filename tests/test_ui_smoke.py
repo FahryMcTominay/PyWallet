@@ -492,8 +492,7 @@ def test_lobby_shows_custom_token_and_detail_dialog(app, ready_vault, make_windo
     custom = next(r for r in rows if r.row.token.custom)
     assert custom.row.amount == Decimal("5") and wt.count_lbl.text().endswith("11 aset")
 
-    # MainWindow membuka dialog modal saat baris diklik; di tes, dialog dibuat "langsung ditutup".
-    monkeypatch.setattr("pywallet.ui.token_dialogs.TokenDetailDialog.exec", lambda self: 0)
+    # MainWindow membuka layar detail di dalam jendela saat baris diklik.
     clicked = []
     wt.tokenRequested.connect(clicked.append)
     custom.clicked.emit(custom.row)
@@ -538,12 +537,77 @@ def test_main_window_hides_builtin_token_and_it_disappears_from_lobby(app, ready
     usdt = next(r for r in rows if r.row.token.symbol == "USDT")
     before = len(rows)
 
-    def accept_removal(self):          # meniru pengguna menekan "Ya, sembunyikan"
-        self.removed = True
-        return 1
-
-    monkeypatch.setattr(TokenDetailDialog, "exec", accept_removal)
     win.show_token(usdt.row)
+    scr = win.screens.screen
+    assert isinstance(scr, TokenDetailDialog)
+    scr._do_remove()                   # meniru pengguna menekan "Ya, sembunyikan"
+    assert win.screens.screen is None
     assert ("ethereum", usdt.row.token.address.lower()) in v.list_hidden_tokens()
     after = wt.findChildren(TokenRow)
     assert len(after) == before - 1 and not any(r.row.token.symbol == "USDT" for r in after)
+
+
+def test_feature_screens_open_inside_main_window_with_back_and_esc(app, ready_vault, make_window):
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+
+    v = ready_vault
+    v.import_mnemonic("A", HARDHAT_MNEMONIC, PW)
+    fake, *_ = _token_env(v)
+    win = make_window(v, fake)
+    win.start()
+    win._enter_app()
+    wt = win.home.wallet_tab
+    assert win.screens.screen is None and win.screens.isHidden()
+
+    wt.addTokenRequested.emit()
+    scr = win.screens.screen
+    assert scr is not None and not win.screens.isHidden() and scr.parent() is win.screens
+    assert not scr.isWindow()                                   # bukan jendela baru
+    QTest.keyClick(scr, Qt.Key.Key_Escape)                      # Esc = kembali
+    assert win.screens.screen is None and win.screens.isHidden()
+
+    wt.addTokenRequested.emit()
+    win.screens.screen.back_btn.click()                         # tombol ←
+    assert win.screens.screen is None
+
+    wt.addTokenRequested.emit()
+    win.lock_app()                                              # mengunci menutup layar yang terbuka
+    assert win.screens.screen is None
+
+
+def test_send_screen_back_returns_to_form_before_closing(app, ready_vault, make_window):
+    v = ready_vault
+    v.import_mnemonic("A", HARDHAT_MNEMONIC, PW)
+    fake, *_ = _token_env(v)
+    win = make_window(v, fake)
+    win.start()
+    win._enter_app()
+    win.home.wallet_tab.sendRequested.emit()
+    scr = win.screens.screen
+    if scr is None:                                             # saldo belum dimuat di lingkungan tes ini
+        pytest.skip("saldo belum tersedia")
+    scr.pages.setCurrentIndex(1)
+    scr.go_back()
+    assert scr.pages.currentIndex() == 0 and win.screens.screen is scr
+    scr.go_back()
+    assert win.screens.screen is None
+
+
+def test_primary_buttons_keep_theme_color_inside_screens(app):
+    """Regresi v0.9.0: stylesheet polos di layar membuat tombol utama transparan (teks/latar hilang)."""
+    from PySide6.QtWidgets import QWidget
+
+    from pywallet.ui.dialogs import ScreenBase, button
+
+    scr = ScreenBase("Uji")
+    btn = button("Simpan", "primary")
+    scr.root.addWidget(btn)
+    scr.resize(420, 400)
+    scr.show()
+    app.processEvents()
+    img = btn.grab().toImage()
+    px = QColor(img.pixel(img.width() // 2, 4))                    # tepi atas tombol: murni latar tombol
+    assert px.name().lower() == theme.ACCENT.lower()
+    assert not [w for w in scr.findChildren(QWidget) if w.styleSheet().strip().startswith("background")]
+    scr.close()

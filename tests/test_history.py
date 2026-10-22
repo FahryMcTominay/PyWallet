@@ -279,10 +279,11 @@ def test_lobby_history_button_and_send_records_log(tmp_path, monkeypatch, qapp):
     win.start()
     win._enter_app()
     win.home.wallet_tab.set_mode("testnet")
-    opened = []
-    monkeypatch.setattr(HistoryDialog, "exec", lambda self: opened.append((self.wallet.id, self.mode)) or 0)
     win.home.wallet_tab.history_btn.click()
-    assert opened == [(wallet.id, "testnet")]
+    scr = win.screens.screen                                 # terbuka sebagai layar di dalam jendela, bukan dialog
+    assert isinstance(scr, HistoryDialog) and (scr.wallet.id, scr.mode) == (wallet.id, "testnet")
+    scr.back_btn.click()
+    assert win.screens.screen is None
 
 
 def test_native_coin_listed_as_symbolless_token_is_not_duplicated():

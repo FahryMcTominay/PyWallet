@@ -389,15 +389,15 @@ def test_lobby_send_button_opens_dialog_with_loaded_balances(tmp_path, monkeypat
 
     seen = {}
 
-    def fake_exec(self):
-        seen["rows"] = [r.token.symbol for r in self._rows]
-        seen["wallet"] = self.wallet.id
-        self.sent_hash = "0x" + "ab" * 32
-        return 1
-
-    monkeypatch.setattr(SendDialog, "exec", fake_exec)
     reloads = []
     monkeypatch.setattr(wt, "reload_tokens", lambda: reloads.append(1))
     wt.sendRequested.emit()
+    scr = win.screens.screen
+    assert isinstance(scr, SendDialog)
+    seen["rows"] = [r.token.symbol for r in scr._rows]
+    seen["wallet"] = scr.wallet.id
+    scr.sent_hash = "0x" + "ab" * 32
+    scr.accept()
+    assert win.screens.screen is None
     assert seen == {"rows": ["ETH"], "wallet": wallet.id}    # hanya aset yang punya saldo
     assert reloads == [1]                                    # saldo dimuat ulang setelah terkirim
