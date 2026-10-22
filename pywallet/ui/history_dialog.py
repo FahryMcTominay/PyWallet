@@ -24,7 +24,7 @@ from ..tokens import tokens_for_mode
 from ..tx import explorer_tx_url
 from ..vault import Vault, VaultError, WalletRecord
 from . import theme
-from .dialogs import BaseDialog, button
+from .dialogs import ScreenBase, button
 from .token_dialogs import open_url
 from .widgets import PasswordField, label
 
@@ -110,20 +110,18 @@ class HistoryRow(QFrame):
         super().mousePressEvent(event)
 
 
-class HistoryDialog(BaseDialog):
+class HistoryDialog(ScreenBase):
     _loaded = Signal(int, object)
 
     def __init__(self, vault: Vault, service: PortfolioService, wallet: WalletRecord, mode: str,
                  parent: QWidget | None = None, run_in_thread: bool = True):
-        super().__init__("Riwayat", parent, 500)
+        super().__init__("Riwayat", parent, scroll=False)
         self.vault, self.service, self.wallet, self.mode = vault, service, wallet, mode
         self.run_in_thread = run_in_thread          # tes mematikannya
         self.result: HistoryResult | None = None
         self._rid = 0
         self._loaded.connect(self._on_loaded)
-        self.setMinimumHeight(560)
 
-        self.root.addWidget(label("Riwayat transaksi", "heading"))
         self.root.addWidget(
             label(f"“{wallet.name}”  ·  {', '.join(NETWORKS[k].name for k in self._networks())} ({MODE_LABELS[mode]})", "muted")
         )
@@ -229,14 +227,13 @@ class HistoryDialog(BaseDialog):
         open_url(explorer_tx_url(item.network, item.tx_hash))
 
 
-class ApiKeyDialog(BaseDialog):
+class ApiKeyDialog(ScreenBase):
     """Atur API key Blockscout PRO untuk riwayat transaksi (opsional; menghindari batas permintaan API publik)."""
 
     def __init__(self, vault: Vault, parent: QWidget | None = None):
-        super().__init__("API key riwayat", parent, 460)
+        super().__init__("API key riwayat", parent)
         self.vault = vault
         self.changed = False
-        self.root.addWidget(label("API key riwayat", "heading"))
         self.root.addWidget(
             label(
                 "Tanpa key, riwayat memakai API publik yang batas permintaannya ketat (galat 429). Dengan key gratis "

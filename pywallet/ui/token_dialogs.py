@@ -14,7 +14,7 @@ from ..rpc import RpcError, TokenInfo
 from ..tokens import TOKENS, InvalidContractAddress, Token, find_builtin, normalize_contract_address
 from ..vault import Vault
 from . import theme
-from .dialogs import USER_ERRORS, BaseDialog, button
+from .dialogs import USER_ERRORS, ScreenBase, button
 from .widgets import TokenIcon, copy_to_clipboard, label, styled
 
 
@@ -31,11 +31,11 @@ def open_url(url: str) -> None:
 # ==========================================================================
 # Tambah token
 # ==========================================================================
-class AddTokenDialog(BaseDialog):
+class AddTokenDialog(ScreenBase):
     _fetched = Signal(int, object)   # (id permintaan, TokenInfo atau Exception)
 
     def __init__(self, vault: Vault, service: PortfolioService, mode: str, parent: QWidget | None = None):
-        super().__init__("Tambah Token", parent, 500)
+        super().__init__("Tambah Token", parent)
         self.vault = vault
         self.service = service
         self.added: Token | None = None
@@ -47,7 +47,6 @@ class AddTokenDialog(BaseDialog):
         self._network = self._networks[0].key
         self._fetched.connect(self._on_fetched)
 
-        self.root.addWidget(label("Tambah token", "heading"))
         self.root.addWidget(
             label(
                 "Masukkan contract address token. Nama, simbol, dan desimalnya dibaca langsung dari blockchain.",
@@ -247,9 +246,9 @@ class AddTokenDialog(BaseDialog):
 # ==========================================================================
 # Detail token (termasuk contract address)
 # ==========================================================================
-class TokenDetailDialog(BaseDialog):
+class TokenDetailDialog(ScreenBase):
     def __init__(self, row: AssetRow, parent: QWidget | None = None):
-        super().__init__("Detail Token", parent, 480)
+        super().__init__("Detail Token", parent)
         self.token = row.token
         self.removed = False
         t = row.token
@@ -313,7 +312,8 @@ class TokenDetailDialog(BaseDialog):
         # Semua token non-native bisa dihapus (kustom) atau disembunyikan (bawaan).
         self.remove_btn = button("Hapus dari daftar" if t.custom else "Sembunyikan dari daftar", "danger")
         self.remove_btn.clicked.connect(self._ask_remove)
-        self.root.addLayout(self.button_row(self.remove_btn, copy_btn, self.explorer_btn))
+        self.root.addLayout(self.button_row(copy_btn, self.explorer_btn))
+        self.root.addLayout(self.button_row(self.remove_btn))
         self.confirm_box = QWidget()
         cl = QVBoxLayout(self.confirm_box)
         cl.setContentsMargins(0, 0, 0, 0)

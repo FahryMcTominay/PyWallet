@@ -31,7 +31,7 @@ from ..networks import NETWORKS
 from ..portfolio import AssetRow, PortfolioService
 from ..vault import InvalidPassword, SentTx, Vault, VaultError, WalletRecord
 from . import theme
-from .dialogs import BaseDialog, button
+from .dialogs import ScreenBase, button
 from .token_dialogs import open_url
 from .widgets import PasswordField, copy_to_clipboard, label
 
@@ -45,7 +45,7 @@ def plain(amount: Decimal) -> str:
     return text.rstrip("0").rstrip(".") if "." in text else text
 
 
-class SendDialog(BaseDialog):
+class SendDialog(ScreenBase):
     _prepared = Signal(int, object)      # (id permintaan, TransferPlan | Exception)
     _broadcasted = Signal(int, object)   # (id, tx_hash | Exception)
     _receipt = Signal(int, object)       # (id, Receipt | None)
@@ -58,7 +58,7 @@ class SendDialog(BaseDialog):
         rows: list[AssetRow],
         parent: QWidget | None = None,
     ):
-        super().__init__("Kirim", parent, 480)
+        super().__init__("Kirim", parent)
         self.vault, self.service, self.wallet = vault, service, wallet
         self.run_in_thread = True                    # tes mematikannya
         self.sent_hash: str | None = None            # terisi setelah transaksi berhasil dikirim ke jaringan
@@ -91,9 +91,13 @@ class SendDialog(BaseDialog):
             page.setSizePolicy(policy)
         self.pages.setCurrentIndex(index)
         self.pages.updateGeometry()
-        if self.isVisible():
-            self.resize(self.width(), 1)           # biar tinggi mengikuti halaman aktif (bisa menyusut)
-            self.adjustSize()
+
+    def go_back(self) -> None:
+        """← pada halaman tinjau kembali ke form; selain itu keluar dari layar Kirim."""
+        if self.pages.currentIndex() == 1 and not self._busy:
+            self._show_page(0)
+            return
+        self.reject()
 
     # ------------------------------------------------------------------
     # Halaman 0: form
@@ -107,7 +111,6 @@ class SendDialog(BaseDialog):
 
     def _build_form(self) -> QWidget:
         host, lay = self._page()
-        lay.addWidget(label("Kirim aset", "heading"))
         lay.addWidget(label(f"Dari “{self.wallet.name}”  ·  {self.wallet.short_address}", "muted"))
 
         self.asset_combo = QComboBox()
