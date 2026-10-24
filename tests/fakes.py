@@ -213,3 +213,37 @@ class FakeSendChain:
 
     def handler(self, payload):
         return [self._one(r) for r in payload] if isinstance(payload, list) else self._one(payload)
+
+
+class FakeDexChain(FakeSendChain):
+    """FakeSendChain + QuoterV2 dan allowance ERC-20 palsu untuk tes swap.
+
+    `pools`: fee tier -> amountOut (tier yang tidak ada = kolam tidak ada, eth_call revert).
+    `allowance`: izin token jual ke router; `approve_sets_allowance`: transaksi pertama yang dikirim menaikkan izin.
+    """
+
+    def __init__(self, pools=None, allowance=0, approve_sets_allowance=True, quoter=None, **kw):
+        super().__init__(**kw)
+        self.pools = dict(pools if pools is not None else {3000: 2_000_000})
+        self.allowance = allowance
+        self.approve_sets_allowance = approve_sets_allowance
+        self.quoter = (quoter or "").lower()
+        self.quote_calls: list[int] = []
+
+    def _one(self, req):
+        m, p = req["method"], req["params"]
+        if m == "eth_call" and self.quoter and p[0]["to"].lower() == self.quoter:
+            from eth_abi import decode, encode
+            data = bytes.fromhex(p[0]["data"][2:])
+            (_tin, _tout, _amt, fee, _lim), = decode(["(address,address,uint256,uint24,uint160)"], data[4:])
+            self.quote_calls.append(fee)
+            if fee not in self.pools:
+                return {"jsonrpc": "2.0", "id": req["id"], "error": {"code": 3, "message": "execution reverted"}}
+            out = encode(["uint256", "uint160", "uint32", "uint256"], [self.pools[fee], 1, 1, 90_000])
+            return {"jsonrpc": "2.0", "id": req["id"], "result": "0x" + out.hex()}
+        if m == "eth_call" and p[0].get("data", "").startswith("0xdd62ed3e"):          # allowance(owner, spender)
+            return {"jsonrpc": "2.0", "id": req["id"], "result": hex(self.allowance)}
+        resp = super()._one(req)
+        if m == "eth_sendRawTransaction" and "result" in resp and self.approve_sets_allowance and len(self.sent) == 1:
+            self.allowance = 10**30
+        return resp

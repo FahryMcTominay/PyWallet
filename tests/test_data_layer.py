@@ -266,17 +266,18 @@ def test_portfolio_change_is_value_weighted():
     assert s.change_pct() == pytest.approx((3500 / (3000 / 1.02 + 500) - 1) * 100)
 
 
-def test_testnet_is_valueless_and_eth_unit_is_native_balance():
+def test_testnet_values_use_mainnet_reference_prices_and_include_tokens():
     rows = [
         AssetRow(tok("sepolia", "ETH", address=None), Decimal("0.25"), 3000.0, 1.0),
         AssetRow(tok("sepolia", "USDC", address="0xabc"), Decimal("10"), 1.0, 0.0),
     ]
     s = Snapshot(mode="testnet", address=ADDR, rows=rows, usd_idr=16000.0, eth_usd=3000.0)
-    assert not s.fiat_enabled
-    assert s.total_in("usd") == 0.0 and s.total_in("idr") == 0.0
-    assert s.total_in("eth") == Decimal("0.25")
-    assert s.row_value(rows[0], "usd") is None
-    assert s.change_pct() is None
+    assert s.is_reference and s.fiat_enabled
+    assert s.total_in("usd") == pytest.approx(0.25 * 3000 + 10)           # USDC ikut dihitung
+    assert s.total_in("idr") == pytest.approx((0.25 * 3000 + 10) * 16000)
+    assert s.total_in("eth") == Decimal(str(0.25 * 3000 + 10)) / Decimal("3000")
+    assert s.row_value(rows[1], "usd") == pytest.approx(10.0)
+    assert s.row_value(rows[0], "idr") == pytest.approx(0.25 * 3000 * 16000)
 
 
 # --------------------------------------------------------------------------
@@ -337,7 +338,7 @@ def test_service_testnet_ranks_with_reference_prices():
     snap = PortfolioService(fake).load(ADDR, "testnet")
     # 0.1 ETH ($300) vs 50 LINK ($750): LINK lebih besar menurut harga referensi
     assert [r.token.symbol for r in snap.rows[:2]] == ["LINK", "ETH"]
-    assert snap.total_in("usd") == 0.0 and snap.total_in("eth") == Decimal("0.1")
+    assert snap.total_in("usd") == pytest.approx(300 + 750)
 
 
 # --------------------------------------------------------------------------

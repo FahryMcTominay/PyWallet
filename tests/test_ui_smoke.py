@@ -314,8 +314,8 @@ def test_unit_and_network_switch_render_and_persist(app, ready_vault, make_windo
     wt.set_unit("eth")
     assert wt.balance.text() == "0.5 ETH"                         # saldo ETH Sepolia
     wt.set_unit("usd")
-    assert wt.balance.text() == "$0.00"                           # testnet tidak bernilai uang
-    assert "tidak bernilai uang" in wt.note_lbl.text()
+    assert wt.balance.text() == "$1,500.00"                       # testnet: perkiraan dari harga mainnet (0,5 ETH x $3000)
+    assert "harga mainnet" in wt.note_lbl.text()
 
     wt.set_mode("mainnet")
     assert wt.balance.text() == "$6,000.00"
@@ -361,7 +361,7 @@ def test_decor_toggle_in_profile_persists(app, ready_vault, make_window):
     pt.decor_btn.click()
     assert not decor.ENABLED and "mati" in pt.decor_btn.text()
     assert v.get_pref("decor") == "0"
-    for w in (win.home.wallet_tab, win.home.swap_tab, pt):
+    for w in (win.home.wallet_tab, pt):
         w.grab()                                  # tetap bisa dirender tanpa motif
     win2 = make_window(v)                         # pilihan diingat saat aplikasi dibuka lagi
     assert not decor.ENABLED and "mati" in win2.home.profile_tab.decor_btn.text()
@@ -380,17 +380,18 @@ def test_tab_switch_slides_and_settles(app, ready_vault, make_window):
     win.show()
     tabs = win.home.tabs
     QTest.qWait(50)
-    win.home._nav_group.button(1).click()            # Swap
+    win.home._nav_group.button(2).click()            # Profil
     assert tabs.is_animating()
     QTest.qWait(tabs.DURATION_MS + 150)
     assert not tabs.is_animating() and tabs.currentIndex() == 1
     assert tabs.currentWidget().pos().x() == 0 and tabs.currentWidget().isVisible()
     assert not win.home.wallet_tab.isVisible()
-    win.home._nav_group.button(2).click()            # klik beruntun: tidak boleh macet
+    win.home._nav_group.button(0).click()            # klik beruntun: tidak boleh macet
+    win.home._nav_group.button(2).click()
     win.home._nav_group.button(0).click()
     QTest.qWait(tabs.DURATION_MS + 150)
     assert tabs.currentIndex() == 0 and tabs.currentWidget().pos().x() == 0
-    assert not win.home.profile_tab.isVisible() and not win.home.swap_tab.isVisible()
+    assert not win.home.profile_tab.isVisible()
     win.close()
 
 
@@ -611,3 +612,24 @@ def test_primary_buttons_keep_theme_color_inside_screens(app):
     assert px.name().lower() == theme.ACCENT.lower()
     assert not [w for w in scr.findChildren(QWidget) if w.styleSheet().strip().startswith("background")]
     scr.close()
+
+
+def test_bottom_nav_swap_opens_swap_screen_and_keeps_current_tab(app, ready_vault, make_window, monkeypatch):
+    from PySide6.QtWidgets import QMessageBox
+
+    v = ready_vault
+    v.create_wallet("Utama", HARDHAT_MNEMONIC, PW)
+    win = make_window(v)
+    win.start()
+    win._enter_app()
+    opened = []
+    monkeypatch.setattr(win, "swap_tokens", lambda: opened.append(1))
+    win.home.swapRequested.disconnect()
+    win.home.swapRequested.connect(win.swap_tokens)
+    monkeypatch.setattr(QMessageBox, "information", lambda *a, **k: None)
+    win.home._nav_group.button(1).click()                       # menu bawah "Swap"
+    assert opened == [1]
+    assert win.home._nav_group.button(0).isChecked()            # menu tetap di Wallet, tidak pindah ke tab kosong
+    win.home._nav_group.button(2).click()
+    win.home._nav_group.button(1).click()
+    assert opened == [1, 1] and win.home._nav_group.button(2).isChecked()
