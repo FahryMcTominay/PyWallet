@@ -37,8 +37,7 @@ class AssetRow:
 
     @property
     def rank_value(self) -> float:
-        """Nilai pembanding untuk pengurutan. Di testnet harga referensi mainnet dipakai
-        HANYA untuk mengurutkan; nilainya tidak ditampilkan."""
+        """Nilai pembanding untuk pengurutan (di testnet memakai harga referensi mainnet)."""
         return self.value_usd or 0.0
 
 
@@ -71,16 +70,19 @@ class Snapshot:
 
     @property
     def fiat_enabled(self) -> bool:
-        """Aset testnet tidak bernilai uang, jadi nilai fiat hanya untuk mainnet."""
-        return self.mode == MODE_MAINNET
+        """Nilai USD/IDR selalu ditampilkan. Di testnet itu hanya perkiraan dari harga mainnet (lihat `is_reference`)."""
+        return True
+
+    @property
+    def is_reference(self) -> bool:
+        """True bila nilainya perkiraan dari harga mainnet (aset testnet sebenarnya tidak bernilai uang)."""
+        return self.mode != MODE_MAINNET
 
     @property
     def has_holdings(self) -> bool:
         return any(r.has_balance for r in self.rows)
 
     def total_usd(self) -> float:
-        if not self.fiat_enabled:
-            return 0.0
         return sum(r.value_usd or 0.0 for r in self.rows)
 
     def has_unpriced_holdings(self) -> bool:
@@ -88,8 +90,6 @@ class Snapshot:
 
     def change_pct(self) -> float | None:
         """Perubahan 24 jam portofolio, ditimbang dengan nilai tiap aset."""
-        if not self.fiat_enabled:
-            return None
         now = prev = 0.0
         for r in self.rows:
             v = r.value_usd
@@ -100,19 +100,15 @@ class Snapshot:
         return (now / prev - 1) * 100 if prev > 0 else None
 
     def total_eth(self) -> Decimal | None:
-        if self.fiat_enabled:
-            if not self.eth_usd:
-                return None
-            return Decimal(str(self.total_usd())) / Decimal(str(self.eth_usd))
-        return sum((r.amount for r in self.rows if r.token.is_native and r.amount), Decimal(0))
+        if not self.eth_usd:
+            return None
+        return Decimal(str(self.total_usd())) / Decimal(str(self.eth_usd))
 
     def total_in(self, unit: str):
         """Total dalam satuan yang dipilih; None bila data pendukung (kurs/harga) belum ada."""
         if unit == UNIT_USD:
             return self.total_usd()
         if unit == UNIT_IDR:
-            if not self.fiat_enabled:
-                return 0.0
             return self.total_usd() * self.usd_idr if self.usd_idr else None
         if unit == UNIT_ETH:
             return self.total_eth()
@@ -120,8 +116,6 @@ class Snapshot:
 
     def row_value(self, row: AssetRow, unit: str):
         """Nilai satu aset dalam satuan terpilih; None jika tidak tersedia / testnet."""
-        if not self.fiat_enabled:
-            return None
         usd = row.value_usd
         if usd is None:
             return None
