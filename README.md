@@ -15,7 +15,7 @@ python main.py
 
 Tes: `python -m pytest -q`. Data aplikasi: `%APPDATA%\PyWallet\` (database `pywallet.db` + folder `avatars`).
 
-## Fitur saat ini (v0.9.1)
+## Fitur saat ini (v0.10.1)
 
 > **Layar, bukan jendela baru (v0.9.0):** Kirim, Terima, Riwayat, Tambah Token, Detail Token, dan API key kini terbuka
 > sebagai layar penuh di dalam jendela utama (geser masuk dari kanan, tombol **←** atau **Esc** untuk kembali, menu
@@ -28,7 +28,7 @@ Tes: `python -m pytest -q`. Data aplikasi: `%APPDATA%\PyWallet\` (database `pywa
 | Buat / impor wallet | Seed 12 kata (wajib verifikasi 3 kata) atau impor seed/private key |
 | Ganti nama, hapus, lihat seed/private key | Dari tab Profil (hapus & lihat rahasia wajib master password) |
 | **Foto profil kustom** | Pilih gambar dari komputer (PNG/JPG/WebP/BMP/GIF); di-crop persegi dari tengah dan disimpan sebagai salinan 256×256 di folder `avatars` |
-| **Total aset USD / IDR / ETH** | Tombol pil di kartu saldo; pilihan diingat. Testnet = ETH Sepolia, aset testnet tidak bernilai uang (USD/IDR = 0) |
+| **Total aset USD / IDR / ETH** | Tombol pil di kartu saldo; pilihan diingat. Di testnet nilainya perkiraan dari harga mainnet (semua token ikut dihitung) |
 | **Mainnet / Testnet** | Chip di header lobi; pilihan diingat |
 | **Logo Ethereum** | Ikon token ETH memakai logo Ethereum |
 | Harga pasar | Binance (publik, tanpa API key) + kurs USD→IDR; grafik mini ETH 24 jam |
@@ -40,8 +40,9 @@ Tes: `python -m pytest -q`. Data aplikasi: `%APPDATA%\PyWallet\` (database `pywa
 | **Tema baru** | Palet abu-abu gelap, teal, biru-teal tua, dan abu pucat; motif kucing/pita/bintang gambar sendiri (bukan gambar karakter mana pun) |
 | **Animasi geser** | Berpindah Wallet/Swap/Profil menggeser halaman (280 ms); klik beruntun tidak macet |
 | **Hiasan latar** | Pita besar, sketsa kucing, dan bintang kecil beropacity rendah di latar; Telinga kucing kecil gaya coretan pensil hanya di tombol Kirim/Terima/Trade (dan ikon aplikasi). Bisa dimatikan dari Profil (pilihan diingat) |
+| **Nilai di testnet** | Saldo Sepolia tetap dinilai USD/IDR/ETH memakai harga mainnet sebagai **perkiraan** (testnet sebenarnya tidak bernilai uang), jadi token seperti USDC ikut dihitung di total. Ada catatan "Perkiraan dari harga mainnet" |
 
-Belum ada: Trade (menampilkan pesan "akan hadir"), buku alamat, nama ENS, jaringan buatan sendiri.
+Belum ada: Swap di mainnet, buku alamat, nama ENS, jaringan buatan sendiri.
 
 ### Tambah token lewat contract address
 
@@ -91,6 +92,18 @@ Pengaman yang dipasang:
 - Di mainnet muncul peringatan tambahan bahwa dana sungguhan tidak bisa ditarik kembali.
 
 Uji dulu di **Testnet (Sepolia)** dengan ETH uji dari faucet. Saldo dimuat ulang otomatis setelah transaksi terkirim.
+
+### Swap (Trade)
+
+Tombol **Trade** di lobi, atau menu **Swap** di navigasi bawah, membuka layar Swap yang memanggil kontrak **Uniswap V3** langsung lewat RPC (tanpa API pihak ketiga).
+Tahap pertama aktif di **Testnet (Sepolia)**; mainnet menyusul setelah alurnya teruji. DEX lain (mis. PancakeSwap)
+bisa ditambah lewat `DexProvider` di `pywallet/swap.py`.
+
+- Pilih token jual + jumlah, token tujuan (bawaan + kustom), dan slippage (0,5/1/3% atau isi sendiri).
+- Kutipan diambil dari beberapa fee tier pool dan dipilih yang terbaik; tampil perkiraan diterima, **minimal diterima**, harga, dan biaya gas.
+- Jika token jual butuh izin (approve), aplikasi mengirim izin **sebesar jumlah swap saja**, menunggu konfirmasi, lalu mengirim swap, dengan satu kali password.
+- Batas waktu transaksi 20 menit; harga lebih tua dari 45 detik diambil ulang sebelum menandatangani; hasilnya masuk Riwayat.
+- Hanya kolam langsung. Likuiditas Sepolia tipis, jadi pasangan tertentu bisa saja belum punya kolam (aplikasi memberi tahu).
 
 ### Riwayat transaksi
 
@@ -170,5 +183,5 @@ tests/                     core, UI (offscreen), lapisan data (jaringan palsu), 
 
 3. ~~Daftar token mainnet yang diperluas dan tambah token via contract address~~ (selesai)
 4. ~~Kirim ETH/token (uji di Sepolia)~~ (selesai)
-5. Swap lewat kontrak PancakeSwap
+5. ~~Swap lewat kontrak DEX~~ (selesai untuk Sepolia via Uniswap V3; mainnet, PancakeSwap/BNB Chain menyusul)
 6. Packaging `.exe` dengan PyInstaller

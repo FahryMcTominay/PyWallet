@@ -63,7 +63,9 @@ dites tanpa layar (`tests/test_vault.py`), dan kamu bisa mengubah tampilan tanpa
 | `ui/main_window.py` | Jendela utama; **menghubungkan klik tombol ke aksi** |
 | `ui/pages.py` | Halaman-halaman (login, lobi, swap, profil, navigasi bawah) |
 | `ui/history_dialog.py` | Dialog Riwayat: daftar transaksi, status, klik untuk buka explorer |
-| `ui/send_dialog.py` | Dialog Kirim: form -> tinjau + password -> status transaksi |
+| `ui/send_dialog.py` | Layar Kirim: form -> tinjau + password -> status transaksi |
+| `swap.py` | Swap: kutipan Uniswap V3, approve, calldata, rencana (tanpa UI) |
+| `ui/swap_screen.py` | Layar Swap: form -> tinjau + password -> [izin] -> swap -> status |
 | `ui/dialogs.py` | Kotak dialog kecil (password, buat wallet, impor, ganti nama, hapus) + `ScreenBase`, kerangka layar penuh dengan tombol ← |
 | `ui/widgets.py` | Komponen kecil yang dipakai ulang (avatar, kartu, tombol bulat, QR, animasi geser) |
 | `ui/theme.py` | Semua warna dan gaya (QSS, mirip CSS) |
@@ -276,7 +278,7 @@ thread kerja; hasil pembaruan status dikembalikan lewat signal dan ditulis lagi 
 ## 5. Kirim dan Swap: cara kerjanya dengan blockchain
 
 > **Status:** Kirim (5.2 dan 5.3) **sudah dibuat** di tahap 4: lihat `tx.py` dan `ui/send_dialog.py`, dan alur
-> kodenya di bagian 4.6. Tombol Trade masih menampilkan pesan "akan hadir"; 5.4 menjelaskan rencananya (tahap 5).
+> kodenya di bagian 4.6. Swap (tahap 5) **sudah dibuat** untuk Sepolia: lihat bagian 5.4.
 
 ### 5.1 Pertama: apa itu "server desentralisasi"?
 Blockchain Ethereum dijalankan oleh ribuan komputer (*node*) di seluruh dunia yang menyimpan **buku besar yang
@@ -313,20 +315,27 @@ berarti memanggil fungsi `transfer(tujuan, jumlah)` milik kontrak token itu. Tra
 **kontrak**, dengan `value = 0` dan data berisi pemanggilan fungsi. Prinsipnya sama dengan `encode_balance_of`
 di `rpc.py`, hanya saja memakai pemilih fungsi `transfer`.
 
-### 5.4 Swap lewat PancakeSwap (rencana tahap 5)
+### 5.4 Swap lewat kontrak DEX (`swap.py`, `ui/swap_screen.py`, tahap 5)
 Swap = menukar token A dengan token B lewat **kontrak router** DEX. Tidak ada pihak yang mencocokkan pembeli
-dan penjual; kontrak memakai *kolam likuiditas* (pool) dan rumus harga.
+dan penjual; kontrak memakai *kolam likuiditas* (pool) dan rumus harga. Aplikasi memanggil kontrak **langsung lewat
+RPC**, tanpa API pihak ketiga. DEX dibuat sebagai "penyedia" (`DexProvider` di `swap.py`): sekarang Uniswap V3 di
+Sepolia; PancakeSwap V3 adalah fork dengan antarmuka yang sama, jadi menambahnya cukup menambah alamat kontrak.
 ```
-1. Perkiraan hasil:     router.getAmountsOut(jumlahA, [A, B])      (hanya membaca, gratis)
-2. Izin (approve):      tokenA.approve(router, jumlahA)            (transaksi 1, jika A bukan ETH)
-3. Tukar:               router.swapExactTokensForTokens(jumlahA, minimumB, jalur, penerima, batasWaktu)
-                                                                    (transaksi 2)
+1. Kutipan harga:   QuoterV2.quoteExactInputSingle(A, B, jumlah, feeTier)   (hanya membaca; 4 fee tier, diambil terbaik)
+2. Izin (approve):  tokenA.approve(router, jumlahA)                          (transaksi 1, hanya jika A bukan ETH)
+3. Tukar:           router.multicall(batasWaktu, [exactInputSingle(..., minimumB, ...), (unwrapWETH9)])
 ```
-- **Slippage**: harga bisa bergeser antara saat melihat dan saat transaksi masuk blok. `minimumB` adalah batas
-  terendah yang kamu terima; jika hasil lebih kecil, transaksi dibatalkan otomatis.
-- **Batas waktu**: transaksi yang tertunda terlalu lama gugur sendiri.
-- **Approve**: kontrak token harus diizinkan dulu memindahkan token milikmu. Ini juga alasan mengapa swap
-  ke kontrak asing yang tidak dikenal berbahaya.
+- **ETH**: kontrak bekerja dengan WETH. Jual ETH: ETH dikirim sebagai `value` dan router membungkusnya otomatis.
+  Terima ETH: WETH diterima router dulu lalu dibuka (`unwrapWETH9`) ke wallet-mu. ETH <-> WETH tidak ditawarkan karena bukan swap.
+- **Slippage**: harga bisa bergeser antara saat melihat dan saat transaksi masuk blok. `minimumB` = kutipan x (1 - slippage)
+  adalah batas terendah yang kamu terima; jika hasil lebih kecil, kontrak membatalkan transaksinya.
+- **Batas waktu**: 20 menit lewat parameter `deadline` di `multicall`.
+- **Approve**: kontrak token harus diizinkan dulu memindahkan token milikmu. Aplikasi hanya mengizinkan **sebesar jumlah
+  swap itu** (bukan tak terbatas), jadi izin lama tidak menggantung.
+- **Thread**: kutipan, estimasi gas, kirim, dan menunggu blok jalan di thread kerja; penandatanganan (butuh SQLite
+  di Vault) selalu di thread utama. Alurnya dirangkai dengan signal `_step` di `SwapScreen`.
+- Harga lebih tua dari 45 detik diambil ulang sebelum menandatangani. Hanya kolam langsung (tanpa rute lewat token
+  perantara); jika tidak ada kolam, aplikasi memberi tahu.
 
 ### 5.5 Risiko yang dijaga
 Transaksi blockchain **tidak bisa dibatalkan**. Karena itu ada: layar konfirmasi yang menampilkan
