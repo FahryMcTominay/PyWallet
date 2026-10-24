@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
 from ..avatars import IMAGE_FILTER, AvatarError, AvatarStore
 from ..config import APP_NAME, HEARTBEAT_MS, avatars_dir
 from ..networks import MODE_LABELS
+from .. import swap
 from ..portfolio import PortfolioService
 from ..tokens import active_networks
 from ..vault import Vault
@@ -30,6 +31,7 @@ from .dialogs import (
 from .pages import EmptyPage, HomePage, SetupPage, UnlockPage
 from .history_dialog import ApiKeyDialog, HistoryDialog
 from .send_dialog import SendDialog
+from .swap_screen import SwapScreen
 from .token_dialogs import AddTokenDialog, TokenDetailDialog
 
 PAGE_SETUP, PAGE_UNLOCK, PAGE_EMPTY, PAGE_HOME = range(4)
@@ -154,6 +156,8 @@ class MainWindow(QMainWindow):
         wt.receiveRequested.connect(self.receive)
         wt.sendRequested.connect(self.send)
         wt.historyRequested.connect(self.show_history)
+        wt.swapRequested.connect(self.swap_tokens)
+        self.home.swapRequested.connect(self.swap_tokens)
         wt.comingSoon.connect(self._coming_soon)
         wt.addTokenRequested.connect(self.add_token)
         wt.tokenRequested.connect(self.show_token)
@@ -354,6 +358,27 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "Kirim", "Saldo belum selesai dimuat. Tunggu sebentar lalu coba lagi.")
             return
         dlg = SendDialog(self.vault, wt.service, wallet, snap.rows, self)
+        dlg.run_in_thread = wt.run_in_thread
+        self.open_screen(dlg, lambda code: wt.reload_tokens() if dlg.sent_hash is not None else None)
+
+    def swap_tokens(self) -> None:
+        wallet = self.vault.get_active_wallet()
+        wt = self.home.wallet_tab
+        snap = wt.snapshot
+        if wallet is None:
+            return
+        nets = swap.swap_networks(tuple(n.key for n in active_networks(wt.mode)))
+        if not nets:
+            QMessageBox.information(
+                self, "Swap",
+                "Swap saat ini baru tersedia di jaringan uji Sepolia (mode Testnet). Ganti mode di lobi untuk mencobanya; "
+                "jaringan utama menyusul setelah alurnya teruji.",
+            )
+            return
+        if snap is None or snap.address != wallet.address or snap.mode != wt.mode:
+            QMessageBox.information(self, "Swap", "Saldo belum selesai dimuat. Tunggu sebentar lalu coba lagi.")
+            return
+        dlg = SwapScreen(self.vault, wt.service, wallet, snap.rows, self)
         dlg.run_in_thread = wt.run_in_thread
         self.open_screen(dlg, lambda code: wt.reload_tokens() if dlg.sent_hash is not None else None)
 

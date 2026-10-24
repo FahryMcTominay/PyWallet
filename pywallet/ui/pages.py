@@ -276,7 +276,7 @@ class TokenRow(Card):
         top.addStretch(1)
         left.addLayout(top)
         sub = net.name + (" · Kustom" if t.custom else "")
-        if snap is not None and not fiat:
+        if snap is not None and snap.is_reference:
             sub += " · Testnet"
         elif fiat and row.price_usd is not None:
             sub += f" · {format_price(row.price_usd)}"
@@ -286,8 +286,6 @@ class TokenRow(Card):
         amount = "—" if row.amount is None else format_amount(row.amount)
         if snap is None:
             value = ""
-        elif not fiat:
-            value = "Tidak bernilai" if row.has_balance else ""
         else:
             v = snap.row_value(row, unit)
             if v is None:
@@ -323,6 +321,7 @@ class WalletTab(QWidget):
     importRequested = Signal()
     receiveRequested = Signal()
     sendRequested = Signal()
+    swapRequested = Signal()
     historyRequested = Signal()
     addTokenRequested = Signal()
     tokenRequested = Signal(object)    # AssetRow yang diklik
@@ -456,7 +455,7 @@ class WalletTab(QWidget):
         trade = CircleAction("swap", "Trade")
         send.clicked.connect(self.sendRequested)
         recv.clicked.connect(self.receiveRequested)
-        trade.clicked.connect(lambda: self.comingSoon.emit("Trade"))
+        trade.clicked.connect(self.swapRequested)
         for w in (send, recv, trade):
             actions.addWidget(w, 1)
         root.addLayout(actions)
@@ -697,19 +696,18 @@ class WalletTab(QWidget):
             else:
                 text = format_eth(total)
             self._set_balance_text(text)
-            if not snap.fiat_enabled:
-                note = "Aset testnet tidak bernilai uang" if self.unit != UNIT_ETH else "Saldo ETH Sepolia (testnet)"
-            else:
-                chg = snap.change_pct()
-                if chg is not None and self.unit != UNIT_ETH:
-                    arrow = "▲" if chg >= 0 else "▼"
-                    change_text = f"{arrow} {format_percent(abs(chg)).lstrip('+')}"
-                    change_color = theme.SUCCESS if chg >= 0 else theme.DANGER
-                    note = "24 jam"
-                elif self.unit == UNIT_ETH:
-                    note = "Setara nilai seluruh aset dalam ETH"
-                if snap.has_unpriced_holdings():
-                    note = "Sebagian aset belum ada harganya"
+            chg = snap.change_pct()
+            if chg is not None and self.unit != UNIT_ETH:
+                arrow = "▲" if chg >= 0 else "▼"
+                change_text = f"{arrow} {format_percent(abs(chg)).lstrip('+')}"
+                change_color = theme.SUCCESS if chg >= 0 else theme.DANGER
+                note = "24 jam"
+            elif self.unit == UNIT_ETH:
+                note = "Setara nilai seluruh aset dalam ETH"
+            if snap.is_reference and total is not None:
+                note = "Perkiraan dari harga mainnet (testnet tidak bernilai uang)"
+            if snap.has_unpriced_holdings() and total is not None:
+                note = "Sebagian aset belum ada harganya"
         self.change_lbl.setText(change_text)
         self.change_lbl.setVisible(bool(change_text))
         styled(self.change_lbl, change_color, 13, 700)
@@ -808,43 +806,6 @@ class _BackdropMixin:
         p = QPainter(self)
         p.fillRect(self.rect(), QColor(theme.BG))
         decor.paint_backdrop(p, self.width(), self.height(), self.backdrop_kind)
-
-
-class SwapTab(_BackdropMixin, QWidget):
-    backdrop_kind = "swap"
-
-    def __init__(self, parent: QWidget | None = None):
-        super().__init__(parent)
-        lay = QVBoxLayout(self)
-        lay.setContentsMargins(24, 24, 24, 24)
-        lay.setSpacing(10)
-        lay.addStretch(2)
-        disc = label()
-        disc.setPixmap(icons.pixmap("swap", 40, theme.BG, 2.0))
-        disc.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        disc.setFixedSize(84, 84)
-        disc.setStyleSheet(f"background: {theme.ACCENT}; border-radius: 42px;")
-        lay.addWidget(disc, 0, Qt.AlignmentFlag.AlignHCenter)
-        title = label("Swap", "title")
-        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        sub = label("Tukar token langsung dari wallet-mu lewat PancakeSwap.", "muted", wrap=True)
-        sub.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        lay.addWidget(title)
-        lay.addWidget(sub)
-        lay.addSpacing(10)
-        card = Card()
-        cl = QVBoxLayout(card)
-        cl.setContentsMargins(18, 14, 18, 14)
-        cl.setSpacing(8)
-        cl.addWidget(styled(label("Segera hadir"), theme.TEXT_STRONG, 14, 700))
-        for line in (
-            "Estimasi harga dan biaya sebelum menukar",
-            "Batas slippage yang bisa diatur",
-            "Konfirmasi dengan master password",
-        ):
-            cl.addWidget(styled(label("•  " + line, wrap=True), theme.TEXT, 13))
-        lay.addWidget(card)
-        lay.addStretch(3)
 
 
 # ==========================================================================
@@ -986,6 +947,8 @@ class ProfileTab(_BackdropMixin, QWidget):
 # Home: tab + navigasi bawah
 # ==========================================================================
 class HomePage(QWidget):
+    swapRequested = Signal()          # tombol Swap di menu bawah membuka layar Swap (bukan tab)
+
     def __init__(
         self,
         vault: Vault,
@@ -995,11 +958,10 @@ class HomePage(QWidget):
     ):
         super().__init__(parent)
         self.wallet_tab = WalletTab(vault, avatar_store, service)
-        self.swap_tab = SwapTab()
         self.profile_tab = ProfileTab(vault, avatar_store)
 
         self.tabs = SlideStack()
-        for t in (self.wallet_tab, self.swap_tab, self.profile_tab):
+        for t in (self.wallet_tab, self.profile_tab):
             self.tabs.addWidget(t)
 
         nav = QFrame()
@@ -1017,8 +979,9 @@ class HomePage(QWidget):
             nav_lay.addWidget(b)
             if i == 0:
                 b.setChecked(True)
-        group.idClicked.connect(self.tabs.slide_to)
+        group.idClicked.connect(self._nav_clicked)
         self._nav_group = group
+        self._current_nav = 0
 
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
@@ -1026,14 +989,26 @@ class HomePage(QWidget):
         lay.addWidget(self.tabs, 1)
         lay.addWidget(nav)
 
+    NAV_SWAP = 1
+
+    def _nav_clicked(self, index: int) -> None:
+        """Wallet (0) dan Profil (2) berpindah tab; Swap (1) membuka layar penuh lalu menu kembali ke tab sebelumnya."""
+        if index == self.NAV_SWAP:
+            self._nav_group.button(self._current_nav).setChecked(True)
+            self.swapRequested.emit()
+            return
+        self._current_nav = index
+        self.tabs.slide_to(0 if index == 0 else 1)
+
     def refresh(self) -> None:
         self.wallet_tab.refresh()
         self.profile_tab.refresh()
 
     def repaint_decor(self) -> None:
-        for t in (self.wallet_tab, self.swap_tab, self.profile_tab):
+        for t in (self.wallet_tab, self.profile_tab):
             t.update()
 
     def show_tab(self, index: int) -> None:
         self._nav_group.button(index).setChecked(True)
-        self.tabs.slide_to(index)
+        self._current_nav = index
+        self.tabs.slide_to(0 if index == 0 else 1)
